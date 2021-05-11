@@ -1,5 +1,0 @@
-EV_NS_DEF_BEGIN(Namespace1)
-
-EV_NS_DEF_FN(U32, update, (F32, deltaTime))
-
-EV_NS_DEF_END(Namespace1)

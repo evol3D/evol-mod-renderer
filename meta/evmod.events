@@ -1,3 +1,0 @@
-PRIMARY(PrimaryEvent, { U32 dummy_primary; })
-
-SECONDARY(PrimaryEvent, SecondaryEvent, { U32 dummy_secondary; })

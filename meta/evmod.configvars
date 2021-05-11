@@ -1,2 +1,0 @@
-EV_CONFIG_VAR(template_var1, I32, 0)
-EV_CONFIG_VAR(template_var2, SDS, "Default")
