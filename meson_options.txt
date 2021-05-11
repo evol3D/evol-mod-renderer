@@ -1,0 +1,1 @@
+option('moduleconfig', type: 'string', value: 'module.lua')
