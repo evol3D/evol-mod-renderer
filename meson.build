@@ -12,10 +12,14 @@ vma_dep = dependency('vma')
 
 mod_src = [
   'src/mod.c',
+
+  'src/Vulkan/Vulkan.c',
+  'src/Vulkan/VulkanQueueManager.c',
 ]
 
 mod_incdir = [
   '..',
+  'src/Vulkan'
 ]
 
 mod_deps = [
