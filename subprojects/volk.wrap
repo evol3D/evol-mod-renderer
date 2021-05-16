@@ -1,0 +1,9 @@
+[wrap-git]
+directory = volk
+url = https://github.com/zeux/volk
+revision = master
+
+patch_directory = volk
+
+[provide]
+dependency_names = volk
