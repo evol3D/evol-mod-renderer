@@ -7,6 +7,9 @@ dst = meson.current_source_dir() + '/import/'
 run_command( 'python3', meson.source_root() + '/subprojects/evol/buildscripts/copy.py', src, dst)
 subdir('import')
 
+volk_dep = dependency('volk')
+vma_dep = dependency('vma')
+
 mod_src = [
   'src/mod.c',
 ]
@@ -17,6 +20,8 @@ mod_incdir = [
 
 mod_deps = [
   evmod_deps,
+  volk_dep,
+  vma_dep,
 ]
 
 module = shared_module(
@@ -27,6 +32,7 @@ module = shared_module(
 
 mod_dep = declare_dependency(
   include_directories: mod_incdir,
+  dependencies: vma_dep
 )
 
 meson.override_dependency('evmod_renderer', mod_dep)
