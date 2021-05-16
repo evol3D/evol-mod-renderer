@@ -1,0 +1,3 @@
+EV_NS_DEF_BEGIN(Renderer)
+EV_NS_DEF_FN(void, setWindow, (WindowHandle, handle))
+EV_NS_DEF_END(Renderer)
