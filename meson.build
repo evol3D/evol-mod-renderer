@@ -15,6 +15,7 @@ mod_src = [
   'src/mod.c',
 
   'src/Vulkan/Vulkan.c',
+  'src/Vulkan/Swapchain.c',
   'src/Vulkan/VulkanQueueManager.c',
   'src/Vulkan/Pipeline.c',
 ]
