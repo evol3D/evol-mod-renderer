@@ -1,13 +1,10 @@
 #include <Vulkan.h>
 
-#include <stdlib.h>
 #include <Vulkan_utils.h>
-
 #include <evol/common/ev_log.h>
 
 struct ev_Vulkan_Data {
   VkInstance       instance;
-  VkSurfaceKHR     surface;
   VmaAllocator     allocator;
   VkApiVersion     apiVersion;
   VkDevice         logicalDevice;
@@ -127,7 +124,8 @@ void ev_vulkan_createinstance()
 
   const char *validation_layers[] = {
     "VK_LAYER_KHRONOS_validation",
-    "VK_LAYER_LUNARG_api_dump",
+    "VK_LAYER_LUNARG_monitor",
+    //"VK_LAYER_LUNARG_api_dump",
   };
 
   VkApplicationInfo applicationInfo = {
@@ -151,13 +149,9 @@ void ev_vulkan_createinstance()
 
 void ev_vulkan_detectphysicaldevice()
 {
-  unsigned int physicalDeviceCount = 0;
-  vkEnumeratePhysicalDevices( VulkanData.instance, &physicalDeviceCount, NULL);
+  unsigned int physicalDeviceCount = 10;
 
-  if(!physicalDeviceCount)
-    assert(!"No physical devices found");
-
-  VkPhysicalDevice *physicalDevices = malloc(physicalDeviceCount * sizeof(VkPhysicalDevice));
+  VkPhysicalDevice physicalDevices[physicalDeviceCount];
   vkEnumeratePhysicalDevices( VulkanData.instance, &physicalDeviceCount, physicalDevices);
 
   VulkanData.physicalDevice = physicalDevices[0];
@@ -172,8 +166,6 @@ void ev_vulkan_detectphysicaldevice()
       break;
     }
   }
-
-  free(physicalDevices);
 }
 
 void ev_vulkan_createlogicaldevice()
@@ -211,19 +203,16 @@ void ev_vulkan_createlogicaldevice()
   VulkanQueueManager.retrieveQueues(VulkanData.logicalDevice, deviceQueueCreateInfos, &queueCreateInfoCount);
 }
 
-void ev_vulkan_setsurface(VkSurfaceKHR surface)
+void ev_vulkan_checksurfacecompatibility(VkSurfaceKHR surface)
 {
-  VulkanData.surface = surface;
-}
-
-VkResult ev_vulkan_checksurface(VkSurfaceKHR surface)
-{
-  //Check that the surface is supported by the Graphics QueueFamily present
+  VkResult res;
 
   VkBool32 surfaceSupported = VK_FALSE;
   vkGetPhysicalDeviceSurfaceSupportKHR(VulkanData.physicalDevice, VulkanQueueManager.getFamilyIndex(GRAPHICS), surface, &surfaceSupported);
 
-  return surfaceSupported;
+  res = surfaceSupported == VK_FALSE ? !VK_SUCCESS : VK_SUCCESS;
+
+  VK_ASSERT(res);
 }
 
 void ev_vulkan_destroysurface(VkSurfaceKHR surface)
@@ -232,7 +221,7 @@ void ev_vulkan_destroysurface(VkSurfaceKHR surface)
   vkDestroySurfaceKHR(VulkanData.instance, surface, NULL);
 }
 
-void ev_vulkan_createswapchain(unsigned int* imageCount, VkSurfaceKHR* surface, VkSurfaceFormatKHR *surfaceFormat, VkSwapchainKHR* swapchain)
+void ev_vulkan_createswapchain(unsigned int* imageCount, VkExtent2D extent, VkSurfaceKHR* surface, VkSurfaceFormatKHR *surfaceFormat, VkSwapchainKHR oldSwapchain, VkSwapchainKHR* swapchain)
 {
   VkSurfaceCapabilitiesKHR surfaceCapabilities;
 
@@ -241,9 +230,11 @@ void ev_vulkan_createswapchain(unsigned int* imageCount, VkSurfaceKHR* surface, 
   unsigned int windowWidth  = surfaceCapabilities.currentExtent.width;
   unsigned int windowHeight = surfaceCapabilities.currentExtent.height;
 
-  //TODO
-  // if(windowWidth == UINT32_MAX || windowHeight == UINT32_MAX)
-  //   Window->getSize(VulkanData.WindowHandle, &windowWidth, &windowHeight);
+  if(windowWidth == UINT32_MAX || windowHeight == UINT32_MAX)
+  {
+    windowWidth = extent.width;
+    windowHeight = extent.height;
+  }
 
   // The forbidden fruit (don't touch it)
   VkCompositeAlphaFlagBitsKHR compositeAlpha =
@@ -286,38 +277,30 @@ void ev_vulkan_createswapchain(unsigned int* imageCount, VkSurfaceKHR* surface, 
   VK_ASSERT(vkCreateSwapchainKHR(VulkanData.logicalDevice, &swapchainCreateInfo, NULL, swapchain));
 }
 
-void ev_vulkan_createframebuffer(VkImageView* attachments, unsigned int attachmentCount, VkRenderPass renderPass, VkFramebuffer *framebuffer)
-{
-  unsigned int windowWidth, windowHeight;
-  //TODO
-  //Window->getSize(VulkanData.WindowHandle, &windowWidth, &windowHeight);
-
-  VkFramebufferCreateInfo swapchainFramebufferCreateInfo = {
-    .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-    .renderPass = renderPass,
-    .attachmentCount = attachmentCount,
-    .pAttachments = attachments,
-    .width = windowWidth,
-    .height = windowHeight,
-    .layers = 1,
-  };
-  VK_ASSERT(vkCreateFramebuffer(VulkanData.logicalDevice, &swapchainFramebufferCreateInfo, NULL, framebuffer));
-}
-
-void ev_vulkan_retrieveswapchainimages(VkSwapchainKHR swapchain, unsigned int * imageCount, VkImage ** images)
+void ev_vulkan_retrieveswapchainimages(VkSwapchainKHR swapchain, unsigned int *imageCount, VkImage *images)
 {
   VK_ASSERT(vkGetSwapchainImagesKHR(VulkanData.logicalDevice, swapchain, imageCount, NULL));
 
-  *images = malloc(sizeof(VkImage) * (*imageCount));
-  if(!images)
-  assert(!"Couldn't allocate memory for the swapchain images!");
-
-  VK_ASSERT(vkGetSwapchainImagesKHR(VulkanData.logicalDevice, swapchain, imageCount, *images));
+  VK_ASSERT(vkGetSwapchainImagesKHR(VulkanData.logicalDevice, swapchain, imageCount, images));
 }
 
 void ev_vulkan_destroyswapchain(VkSwapchainKHR swapchain)
 {
   vkDestroySwapchainKHR(VulkanData.logicalDevice, swapchain, NULL);
+}
+
+void ev_vulkan_createframebuffer(VkImageView* attachments, unsigned int attachmentCount, VkRenderPass renderPass, VkExtent2D surfaceExtent, VkFramebuffer *framebuffer)
+{
+  VkFramebufferCreateInfo swapchainFramebufferCreateInfo = {
+    .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+    .renderPass = renderPass,
+    .attachmentCount = attachmentCount,
+    .pAttachments = attachments,
+    .width = surfaceExtent.width,
+    .height = surfaceExtent.height,
+    .layers = 1,
+  };
+  VK_ASSERT(vkCreateFramebuffer(VulkanData.logicalDevice, &swapchainFramebufferCreateInfo, NULL, framebuffer));
 }
 
 void ev_vulkan_allocatememorypool(VmaPoolCreateInfo *poolCreateInfo, VmaPool* pool)
@@ -368,28 +351,24 @@ void ev_vulkan_createimage(VkImageCreateInfo *imageCreateInfo, VmaAllocationCrea
   vmaCreateImage(VulkanData.allocator, imageCreateInfo, allocationCreateInfo, &(image->image), &(image->allocation), &(image->allocationInfo));
 }
 
-void ev_vulkan_createimageviews(unsigned int imageCount, VkFormat imageFormat, VkImage *images, VkImageView **views)
+void ev_vulkan_createimageview(VkFormat imageFormat, VkImage *image, VkImageView* view)
 {
-  *views = malloc(sizeof(VkImageView) * imageCount);
-  for (unsigned int i = 0; i < imageCount; ++i)
-  {
     VkImageViewCreateInfo imageViewCreateInfo = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-      .image = images[i],
+      .image = *image,
       .viewType = VK_IMAGE_VIEW_TYPE_2D,
       .format = imageFormat,
       .components = {0, 0, 0, 0},
       .subresourceRange = {
-        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-        .baseMipLevel = 0,
-        .levelCount = 1,
-        .baseArrayLayer = 0,
-        .layerCount = 1,
-      },
+          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+          .baseMipLevel = 0,
+          .levelCount = 1,
+          .baseArrayLayer = 0,
+          .layerCount = 1,
+        },
     };
 
-    vkCreateImageView(VulkanData.logicalDevice, &imageViewCreateInfo, NULL, *views + i);
-  }
+    vkCreateImageView(VulkanData.logicalDevice, &imageViewCreateInfo, NULL, view);
 }
 
 void ev_vulkan_destroyimage(EvImage *image)

@@ -1,8 +1,7 @@
-#ifndef EVOL_VULKAN_H
-#define EVOL_VULKAN_H
+#pragma once
 
 #define VOLK_VERSION   VK_VERSION_1_2
-#define VULKAN_VERSION VK_API_VERSION_1_2
+#define VULKAN_VERSION VK_API_VERSION_1_1
 
 #include <volk.h>
 
@@ -28,15 +27,11 @@ typedef struct
 int ev_vulkan_init();
 int ev_vulkan_deinit();
 
-//surface
-void ev_vulkan_setsurface(VkSurfaceKHR surface);
-VkResult ev_vulkan_checksurface(VkSurfaceKHR surface);
-void ev_vulkan_destroysurface(VkSurfaceKHR surface);
-
 //swapchain
-void ev_vulkan_createswapchain(unsigned int* imageCount, VkSurfaceKHR* surface, VkSurfaceFormatKHR *surfaceFormat, VkSwapchainKHR* swapchain);
-void ev_vulkan_createframebuffer(VkImageView* attachments, unsigned int attachmentCount, VkRenderPass renderPass, VkFramebuffer *framebuffer);
-void ev_vulkan_retrieveswapchainimages(VkSwapchainKHR swapchain, unsigned int * imageCount, VkImage ** images);
+void ev_vulkan_createswapchain(unsigned int* imageCount, VkExtent2D extent, VkSurfaceKHR* surface, VkSurfaceFormatKHR *surfaceFormat, VkSwapchainKHR oldSwapchain, VkSwapchainKHR* swapchain);
+void ev_vulkan_createframebuffer(VkImageView* attachments, unsigned int attachmentCount, VkRenderPass renderPass, VkExtent2D surfaceExtent, VkFramebuffer *framebuffer);
+void ev_vulkan_retrieveswapchainimages(VkSwapchainKHR swapchain, unsigned int* imageCount, VkImage* images);
+void ev_vulkan_checksurfacecompatibility(VkSurfaceKHR surface);
 void ev_vulkan_destroyswapchain(VkSwapchainKHR swapchain);
 
 //memory pools
@@ -49,7 +44,7 @@ void ev_vulkan_allocateprimarycommandbuffer(QueueType queueType, VkCommandBuffer
 
 //vulkan images
 void ev_vulkan_createimage(VkImageCreateInfo *imageCreateInfo, VmaAllocationCreateInfo *allocationCreateInfo, EvImage *image);
-void ev_vulkan_createimageviews(unsigned int imageCount, VkFormat imageFormat, VkImage *images, VkImageView **views);
+void ev_vulkan_createimageview(VkFormat imageFormat, VkImage *image, VkImageView* view);
 void ev_vulkan_destroyimage(EvImage *image);
 
 //vulkan buffers
@@ -62,5 +57,3 @@ VkDevice ev_vulkan_getlogicaldevice();
 VkPhysicalDevice ev_vulkan_getphysicaldevice();
 VkCommandPool ev_vulkan_getcommandpool(QueueType type);
 VmaAllocator ev_vulkan_getvmaallocator();
-
-#endif //EVOL_VULKAN_H
