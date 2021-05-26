@@ -9,12 +9,14 @@ subdir('import')
 
 volk_dep = dependency('volk')
 vma_dep = dependency('vma')
+spvref_dep = dependency('spvref')
 
 mod_src = [
   'src/mod.c',
 
   'src/Vulkan/Vulkan.c',
   'src/Vulkan/VulkanQueueManager.c',
+  'src/Vulkan/Pipeline.c',
 ]
 
 mod_incdir = [
@@ -26,6 +28,7 @@ mod_deps = [
   evmod_deps,
   volk_dep,
   vma_dep,
+  spvref_dep
 ]
 
 module = shared_module(
