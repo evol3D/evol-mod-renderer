@@ -1,0 +1,6 @@
+[wrap-git]
+url = https://github.com/KhronosGroup/SPIRV-Reflect
+revision = master
+depth = 1
+
+patch_directory = spvref
