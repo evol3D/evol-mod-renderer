@@ -1,26 +1,26 @@
-project('vma', ['c','cpp'])
+project('volk', 'c',
+  default_options: [
+    'default_library=static',
+  ],
+)
 
 vulkan_dep = dependency('vulkan').partial_dependency(compile_args : true)
 
-vma_inc = include_directories('include')
+volk_inc = include_directories('.')
 
-vma_src = files('vk_mem_alloc.cpp')
+volk_src = files('volk_impl.c')
 
-mod_deps = [
-  vulkan_dep,
-]
-
-vma_lib = library(
-  'vma',
-  vma_src,
-  include_directories: vma_inc,
-  dependencies: mod_deps
+volk_lib = library(
+  'volk',
+  volk_src,
+  include_directories: volk_inc,
+  dependencies: vulkan_dep
 )
 
-vma_dep = declare_dependency(
-  link_with: vma_lib,
-  include_directories: vma_inc,
-  dependencies: mod_deps
+volk_dep = declare_dependency(
+  link_with: volk_lib,
+  include_directories: volk_inc,
+  dependencies: vulkan_dep
 )
 
-meson.override_dependency('vma', vma_dep)
+meson.override_dependency('volk', volk_dep)
