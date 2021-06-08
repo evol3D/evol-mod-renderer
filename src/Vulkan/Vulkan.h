@@ -5,24 +5,11 @@
 
 #include <volk.h>
 
-#include <vk_mem_alloc.h>
+#include <Renderer_types.h>
+
 #include <VulkanQueueManager.h>
 
 typedef unsigned int VkApiVersion;
-
-typedef struct
-{
-  VkImage image;
-  VmaAllocation allocation;
-  VmaAllocationInfo allocationInfo;
-} EvImage;
-
-typedef struct
-{
-  VkBuffer buffer;
-  VmaAllocation allocation;
-  VmaAllocationInfo allocationInfo;
-} EvBuffer;
 
 int ev_vulkan_init();
 int ev_vulkan_deinit();
@@ -57,3 +44,12 @@ VkDevice ev_vulkan_getlogicaldevice();
 VkPhysicalDevice ev_vulkan_getphysicaldevice();
 VkCommandPool ev_vulkan_getcommandpool(QueueType type);
 VmaAllocator ev_vulkan_getvmaallocator();
+
+
+
+
+
+void ev_vulkan_createdescriptorpool(VkDescriptorPoolCreateInfo *info, VkDescriptorPool *pool);
+void ev_vulkan_destroydescriptorpool(VkDescriptorPool *pool);
+
+void ev_vulkan_allocatedescriptor(VkDescriptorSetAllocateInfo *info, VkDescriptorSet *set);

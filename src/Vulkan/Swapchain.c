@@ -4,7 +4,7 @@
 #include <evstr.h>
 #include <evol/evol.h>
 #include <evol/common/ev_globals.h>
-#include <evol/common/ev_log.h>>
+#include <evol/common/ev_log.h>
 
 void ev_swapchain_createcommandbuffers(EvSwapchain *Swapchain)
 {

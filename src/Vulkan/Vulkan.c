@@ -13,6 +13,8 @@ struct ev_Vulkan_Data {
   VkCommandPool    commandPools[QUEUE_TYPE_COUNT];
 } VulkanData;
 
+#define DATA(X) VulkanData.X
+
 int ev_vulkan_init();
 int ev_vulkan_deinit();
 
@@ -336,9 +338,11 @@ void ev_vulkan_memorydump()
 
 void ev_vulkan_allocateprimarycommandbuffer(QueueType queueType, VkCommandBuffer *cmdBuffer)
 {
+  VkCommandPool pool = ev_vulkan_getcommandpool(queueType);
+
   VkCommandBufferAllocateInfo cmdBufferAllocateInfo = {
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-    .commandPool = VulkanData.commandPools[queueType],
+    .commandPool = pool,
     .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
     .commandBufferCount = 1,
   };
@@ -420,4 +424,19 @@ VkCommandPool ev_vulkan_getcommandpool(QueueType type)
     VK_ASSERT(vkCreateCommandPool(VulkanData.logicalDevice, &commandPoolCreateInfo, NULL, &(VulkanData.commandPools[type])));
   }
   return VulkanData.commandPools[type];
+}
+
+void ev_vulkan_createdescriptorpool(VkDescriptorPoolCreateInfo *info, VkDescriptorPool *pool)
+{
+  VK_ASSERT(vkCreateDescriptorPool(DATA(logicalDevice), info, NULL, pool));
+}
+
+void ev_vulkan_destroydescriptorpool(VkDescriptorPool *pool)
+{
+  vkDestroyDescriptorPool(DATA(logicalDevice), *pool, NULL);
+}
+
+void ev_vulkan_allocatedescriptor(VkDescriptorSetAllocateInfo *info, VkDescriptorSet *set)
+{
+  VK_ASSERT(vkAllocateDescriptorSets(DATA(logicalDevice), info, set));
 }
