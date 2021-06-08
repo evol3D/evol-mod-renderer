@@ -20,11 +20,6 @@
 #define IMPORT_MODULE evmod_assets
 #include IMPORT_MODULE_H
 
-#define TYPE_MODULE evmod_assetsystem
-#include <evol/meta/type_import.h>
-#define NAMESPACE_MODULE evmod_assetsystem
-#include <evol/meta/namespace_import.h>
-
 #define DATA(X) RendererData.X
 
 struct ev_Renderer_Data
@@ -715,14 +710,12 @@ bool isNewMaterial()
 }
 
 
-void ev_renderer_registerMaterial(evstring shaderCodes[], VkShaderStageFlags stageFlags[], uint32_t dataCount ,ShaderData shaderData[])
+void ev_renderer_registerMaterial(vec(Shader) shaders, uint32_t dataCount ,ShaderData *shaderData)
 {
   RendererMaterial newMaterial;
 
   if(isNewMaterial())
   {
-    newMaterial.pShaderCodes = vec_init(evstring);
-    newMaterial.pStageFlags = vec_init(VkShaderStageFlagBits);
     newMaterial.pSets = vec_init(DescriptorSet);
 
     newMaterial.pObjects = vec_init(EvRenderObject);
@@ -730,20 +723,13 @@ void ev_renderer_registerMaterial(evstring shaderCodes[], VkShaderStageFlags sta
     newMaterial.pMeshBuffers = vec_init(EvBuffer);
     newMaterial.pCustomBuffers = vec_init(EvBuffer);
 
-    vec_push(&newMaterial.pShaderCodes, &shaderCodes[0]);
-    vec_push(&newMaterial.pShaderCodes, &shaderCodes[1]);
-
-    vec_push(&newMaterial.pStageFlags, &stageFlags[0]);
-    vec_push(&newMaterial.pStageFlags, &stageFlags[1]);
-
-    EvGraphicsPipelineCreateInfo pipelineCreateInfo1 = {
-      .stageCount = vec_len(newMaterial.pShaderCodes),
-      .pShaderCodes = newMaterial.pShaderCodes,
-      .pStageFlags = newMaterial.pStageFlags,
+    EvGraphicsPipelineCreateInfo pipelineCreateInfo = {
+      .stageCount = vec_len(shaders),
+      .pShaders = shaders,
       .renderPass = DATA(renderPass),
     };
 
-    ev_pipeline_build(pipelineCreateInfo1, &newMaterial);
+    ev_pipeline_build(pipelineCreateInfo, &newMaterial);
 
     for (size_t i = 0; i < vec_len(newMaterial.pSets); i++)
     {
@@ -787,8 +773,14 @@ void ev_renderer_registerMaterial(evstring shaderCodes[], VkShaderStageFlags sta
 
 void addObject()
 {
-  AssetHandle project_config = Asset->load("project://Avocado.mesh");
-  MeshAsset project_desc = MeshLoader->loadAsset(project_config);
+  AssetHandle avocado_asset = Asset->load("project://Avocado.mesh");
+  MeshAsset avocado_mesh = MeshLoader->loadAsset(avocado_asset);
+
+  AssetHandle vertShader_asset = Asset->load("shaders://default.vert");
+  ShaderAsset vertShader_desc = ShaderLoader->loadAsset(vertShader_asset, EV_SHADERASSETSTAGE_VERTEX, "default.vert", NULL, EV_SHADER_BIN);
+
+  AssetHandle fragShader_asset = Asset->load("shaders://default.frag");
+  ShaderAsset fragShader_desc = ShaderLoader->loadAsset(fragShader_asset, EV_SHADERASSETSTAGE_FRAGMENT, "default.frag", NULL, EV_SHADER_BIN);
 
   // for (size_t i = 0; i < project_desc.vertexCount; i++)
   // {
@@ -802,15 +794,29 @@ void addObject()
   //   ev_log_debug("index: %d\n",*(project_desc.indexData + i));
   // }
 
-  evstring shaderCodes[2] = {
-    AssetSystem->load_shader("default.vert.spv"),
-    AssetSystem->load_shader("default.frag.spv"),
-  };
+  // ShaderAsset shaderCodes[] = {
+  //   vertShader_desc,
+  //   fragShader_desc,
+  // };
+  //
+  // VkShaderStageFlags stageFlags[] = {
+  //   VK_SHADER_STAGE_VERTEX_BIT,
+  //   VK_SHADER_STAGE_FRAGMENT_BIT,
+  // };
 
-  VkShaderStageFlags stageFlags[] = {
-    VK_SHADER_STAGE_VERTEX_BIT,
-    VK_SHADER_STAGE_FRAGMENT_BIT,
-  };
+
+  vec(Shader) shaders = vec_init(Shader);
+  vec_push(&shaders, &(Shader){
+    .data = vertShader_desc.binary,
+    .length = vertShader_desc.len,
+    .stage = VK_SHADER_STAGE_VERTEX_BIT,
+  });
+
+  vec_push(&shaders, &(Shader){
+    .data = fragShader_desc.binary,
+    .length = fragShader_desc.len,
+    .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+  });
 
   // ShaderData shaderData[] = {
   //   {evstring_new("ResourceBuffers"), MESHRESOURCE, vec_len(triangleMesh.vertices) * sizeof(EvVertex), triangleMesh.vertices},
@@ -819,16 +825,21 @@ void addObject()
   //   {evstring_new("ssBuffers"), CUSTOMBUFFER, 1 * sizeof(EvVertex), &ss},
   // };
 
-  ev_log_debug("%d", project_desc.indexCount);
+  ev_log_debug("%d", avocado_mesh.indexCount);
 
   ShaderData shaderData[] = {
-    {evstring_new("ResourceBuffers"), MESHRESOURCE, project_desc.vertexBuferSize, project_desc.vertexData},
-    {evstring_new("PositionBuffers"), CUSTOMBUFFER, project_desc.indexBuferSize, project_desc.indexData},
+    {evstring_new("ResourceBuffers"), MESHRESOURCE, avocado_mesh.vertexBuferSize, avocado_mesh.vertexData},
+    {evstring_new("PositionBuffers"), CUSTOMBUFFER, avocado_mesh.indexBuferSize, avocado_mesh.indexData},
     // {evstring_new("ColorBuffers"), CUSTOMBUFFER, 1 * sizeof(EvVertex), &color},
     // {evstring_new("ssBuffers"), CUSTOMBUFFER, 1 * sizeof(EvVertex), &ss},
   };
 
-  ev_renderer_registerMaterial(shaderCodes, stageFlags, ARRAYSIZE(shaderData), shaderData);
+  ev_renderer_registerMaterial(shaders, ARRAYSIZE(shaderData), shaderData);
+  vec_fini(shaders);
+
+  Asset->free(avocado_asset);
+  Asset->free(vertShader_asset);
+  Asset->free(fragShader_asset);
 }
 
 void setWindow(WindowHandle handle)
@@ -869,10 +880,7 @@ EV_CONSTRUCTOR
   // }
 
   evolmodule_t asset_mod   = evol_loadmodule("assetmanager");   DEBUG_ASSERT(asset_mod);
-  imports(asset_mod  , (AssetManager, Asset, MeshLoader))
-
-  evolmodule_t asset_module   = evol_loadmodule("asset-importer"); DEBUG_ASSERT(asset_module);
-  IMPORT_NAMESPACE(AssetSystem, asset_module);
+  imports(asset_mod  , (AssetManager, Asset, MeshLoader, ShaderLoader))
 
   evolmodule_t window_module  = evol_loadmodule("window");  DEBUG_ASSERT(window_module);
   IMPORT_NAMESPACE(Window, window_module);

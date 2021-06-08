@@ -35,19 +35,7 @@ typedef struct {
   void *descriptorData;
 } oldDescriptor;
 
-typedef struct {
-  //passed to engine
-  evstring shaderCodes[2];
-  VkShaderStageFlagBits stageFlags[2];
 
-  //built by engine
-  vec(VkDescriptorSetLayout) setLayouts;
-  vec(VkDescriptorSet) sets;
-  vec(void *) setsdescriptors;
-
-  VkPipelineLayout pipelineLayout;
-  VkPipeline pipeline;
-} EvMaterial;
 
 typedef struct {
   Matrix4x4 transform;
@@ -67,7 +55,11 @@ typedef struct {
 
 
 
-
+typedef struct {
+  void* data;
+  size_t length;
+  VkShaderStageFlags stage;
+} Shader;
 
 typedef struct {
   uint32_t binding;
@@ -86,9 +78,6 @@ typedef struct {
 } DescriptorSet;
 
 typedef struct {
-  vec(evstring) pShaderCodes;
-  vec(VkShaderStageFlagBits) pStageFlags;
-
   vec(EvBuffer) pMeshBuffers;
   vec(EvBuffer) pCustomBuffers;
 

@@ -16,12 +16,12 @@ typedef struct
   vec(uint32_t*) bindingNames;
 } DescriptorSetLayoutData;
 
-void ev_pipeline_createshadermodule(evstring code, VkShaderModule *shaderModule)
+void ev_pipeline_createshadermodule(Shader code, VkShaderModule *shaderModule)
 {
   VkShaderModuleCreateInfo shaderModuleCreateInfo = {
     .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-    .codeSize = evstring_len(code),
-    .pCode = (const uint32_t*)code,
+    .codeSize = code.length,
+    .pCode = code.data,
   };
 
   VK_ASSERT(vkCreateShaderModule(ev_vulkan_getlogicaldevice(), &shaderModuleCreateInfo, NULL, shaderModule));
@@ -32,15 +32,15 @@ void descriptorSetLayoutData_destr(DescriptorSetLayoutData *data)
   vec_fini(data->bindings);
 }
 
-void ev_pipeline_reflectlayout(RendererMaterial *material)
+void ev_pipeline_reflectlayout(EvGraphicsPipelineCreateInfo pipelineCreateInfo, RendererMaterial *material)
 {
   vec(VkPushConstantRange) constant_ranges = vec_init(VkPushConstantRange);
   vec(DescriptorSetLayoutData) set_datalayouts = vec_init(DescriptorSetLayoutData, descriptorSetLayoutData_destr);
 
-  for (size_t stageIndex = 0; stageIndex < vec_len(material->pShaderCodes); stageIndex++)
+  for (size_t stageIndex = 0; stageIndex < pipelineCreateInfo.stageCount; stageIndex++)
   {
     SpvReflectShaderModule spvmodule;
-    SpvReflectResult result = spvReflectCreateShaderModule(evstring_len(material->pShaderCodes[stageIndex]), material->pShaderCodes[stageIndex], &spvmodule);
+    SpvReflectResult result = spvReflectCreateShaderModule(pipelineCreateInfo.pShaders[stageIndex].length, pipelineCreateInfo.pShaders[stageIndex].data, &spvmodule);
 
     uint32_t count = 0;
     result = spvReflectEnumerateDescriptorSets(&spvmodule, &count, NULL);
@@ -98,7 +98,7 @@ void ev_pipeline_reflectlayout(RendererMaterial *material)
       VkPushConstantRange pcs = {0};
       pcs.offset = pconstants[0]->offset;
       pcs.size = pconstants[0]->size;
-      pcs.stageFlags = material->pStageFlags[stageIndex];
+      pcs.stageFlags = pipelineCreateInfo.pShaders[stageIndex].stage;
 
       vec_push(&constant_ranges, &pcs);
     }
@@ -201,24 +201,22 @@ void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, RendererMateri
 
   {
     if (evCreateInfo.stageCount == 0) return;
-    if (evCreateInfo.pShaderCodes == NULL) return;
-    if (evCreateInfo.pStageFlags == NULL) return;
     if (evCreateInfo.renderPass == NULL) return;
   }
 
   for (size_t stgIndex = 0; stgIndex < evCreateInfo.stageCount; stgIndex++)
   {
-    ev_pipeline_createshadermodule(evCreateInfo.pShaderCodes[stgIndex], &shaderModules[stgIndex]);
+    ev_pipeline_createshadermodule(evCreateInfo.pShaders[stgIndex], &shaderModules[stgIndex]);
 
     shaderStageCreateInfos[stgIndex] = (VkPipelineShaderStageCreateInfo){
       .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-      .stage  = evCreateInfo.pStageFlags[stgIndex],
+      .stage  = evCreateInfo.pShaders[stgIndex].stage,
       .module = shaderModules[stgIndex],
       .pName  = "main"
     };
   }
 
-  ev_pipeline_reflectlayout(material);
+  ev_pipeline_reflectlayout(evCreateInfo, material);
 
   VkPipelineVertexInputStateCreateInfo pipelineVertexInputState ={
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,

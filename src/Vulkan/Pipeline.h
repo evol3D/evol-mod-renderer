@@ -7,9 +7,8 @@
 
 typedef struct
 {
-  U32                                         stageCount;
-  evstring*                                        pShaderCodes;
-  VkShaderStageFlagBits*                           pStageFlags;
+  U32                                              stageCount;
+  Shader*                                          pShaders;
 
   VkRenderPass                                     renderPass;
 
