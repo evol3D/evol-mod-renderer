@@ -12,10 +12,8 @@
 #include <cglm/cglm.h>
 
 #define EV_WINDOW_VULKAN_SUPPORT
-#define NAMESPACE_MODULE evmod_glfw
-#include <evol/meta/namespace_import.h>
-#define EVENT_MODULE evmod_glfw
-#include <evol/meta/event_include.h>
+#define IMPORT_MODULE evmod_glfw
+#include IMPORT_MODULE_H
 
 #define IMPORT_MODULE evmod_assets
 #include IMPORT_MODULE_H

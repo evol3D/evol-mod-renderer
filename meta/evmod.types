@@ -1,2 +1,0 @@
-#define TYPE_MODULE evmod_glfw
-#include <evol/meta/type_import.h>
