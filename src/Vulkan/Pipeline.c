@@ -1,5 +1,6 @@
 #include "Pipeline.h"
 
+#include <Renderer_types.h>
 #include <Vulkan_utils.h>
 #include <evol/common/ev_macros.h>
 #include <vec.h>
@@ -12,6 +13,7 @@ typedef struct
   uint32_t set_number;
   VkDescriptorSetLayoutCreateInfo create_info;
   vec(VkDescriptorSetLayoutBinding) bindings;
+  vec(uint32_t*) bindingNames;
 } DescriptorSetLayoutData;
 
 void ev_pipeline_createshadermodule(evstring code, VkShaderModule *shaderModule)
@@ -30,20 +32,15 @@ void descriptorSetLayoutData_destr(DescriptorSetLayoutData *data)
   vec_fini(data->bindings);
 }
 
-void ev_pipeline_reflectlayout(uint32_t stagesCount, VkShaderStageFlagBits *stageFlags, evstring *stageCodes, VkPipelineLayout *builtLayout)
+void ev_pipeline_reflectlayout(RendererMaterial *material)
 {
   vec(VkPushConstantRange) constant_ranges = vec_init(VkPushConstantRange);
   vec(DescriptorSetLayoutData) set_datalayouts = vec_init(DescriptorSetLayoutData, descriptorSetLayoutData_destr);
-  vec(VkDescriptorSetLayout) setLayouts = vec_init(VkDescriptorSetLayout);
 
-  vec_setcapacity(&setLayouts, 4);
-
-  for (size_t stageIndex = 0; stageIndex < stagesCount; stageIndex++)
+  for (size_t stageIndex = 0; stageIndex < vec_len(material->pShaderCodes); stageIndex++)
   {
-    //EvShaderModule stage = stages[stageIndex];
-
     SpvReflectShaderModule spvmodule;
-    SpvReflectResult result = spvReflectCreateShaderModule(evstring_len(stageCodes[stageIndex]), stageCodes[stageIndex], &spvmodule);
+    SpvReflectResult result = spvReflectCreateShaderModule(evstring_len(material->pShaderCodes[stageIndex]), material->pShaderCodes[stageIndex], &spvmodule);
 
     uint32_t count = 0;
     result = spvReflectEnumerateDescriptorSets(&spvmodule, &count, NULL);
@@ -58,24 +55,29 @@ void ev_pipeline_reflectlayout(uint32_t stagesCount, VkShaderStageFlagBits *stag
     {
       SpvReflectDescriptorSet* set = sets[setIndex];
 
-      DescriptorSetLayoutData layout = {};
-      layout.bindings = vec_init(VkDescriptorSetLayoutBinding);
-      vec_setcapacity(&layout.bindings, set->binding_count);
+      DescriptorSetLayoutData layout = {
+        .bindings = vec_init(VkDescriptorSetLayoutBinding),
+        .bindingNames = vec_init(uint32_t*),
+      };
+      vec_setlen(&layout.bindings, set->binding_count);
+      vec_setlen(&layout.bindingNames, set->binding_count);
 
       for (uint32_t i_binding = 0; i_binding < set->binding_count; ++i_binding)
       {
         const SpvReflectDescriptorBinding refl_binding = *(set->bindings[i_binding]);
-        VkDescriptorSetLayoutBinding layout_binding = layout.bindings[i_binding];
-        layout_binding.binding = refl_binding.binding;
-        layout_binding.descriptorType = (VkDescriptorType)refl_binding.descriptor_type;
-        layout_binding.descriptorCount = 1;
+        VkDescriptorSetLayoutBinding *layout_binding = &layout.bindings[i_binding];
+        layout_binding->binding = refl_binding.binding;
+        layout_binding->descriptorType = (VkDescriptorType)refl_binding.descriptor_type;
+        layout_binding->descriptorCount = 1;
+        layout.bindingNames[i_binding] = refl_binding.name;
 
         for (uint32_t i_dim = 0; i_dim < refl_binding.array.dims_count; ++i_dim)
         {
-          layout_binding.descriptorCount *= refl_binding.array.dims[i_dim];
+          layout_binding->descriptorCount *= refl_binding.array.dims[i_dim];
         }
-        layout_binding.stageFlags = (VkShaderStageFlagBits)spvmodule.shader_stage;
+        layout_binding->stageFlags = (VkShaderStageFlagBits)spvmodule.shader_stage;
       }
+
       layout.set_number = set->set;
       layout.create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
       layout.create_info.bindingCount = set->binding_count;
@@ -96,7 +98,7 @@ void ev_pipeline_reflectlayout(uint32_t stagesCount, VkShaderStageFlagBits *stag
       VkPushConstantRange pcs = {0};
       pcs.offset = pconstants[0]->offset;
       pcs.size = pconstants[0]->size;
-      pcs.stageFlags = stageFlags[stageIndex];
+      pcs.stageFlags = material->pStageFlags[stageIndex];
 
       vec_push(&constant_ranges, &pcs);
     }
@@ -113,16 +115,39 @@ void ev_pipeline_reflectlayout(uint32_t stagesCount, VkShaderStageFlagBits *stag
     [3] = { .bindings = vec_init(VkDescriptorSetLayoutBinding) },
   };
 
-  for (int i = 0; i < 4; i++) {
+  material->pSets = vec_init(DescriptorSet);
+  vec_setcapacity(&material->pSets, 4);
+
+  for (int i = 0; i < 4; i++)
+  {
+    DescriptorSet realSet;
+    realSet.layout = VK_NULL_HANDLE;
+    realSet.pBindings = vec_init(Binding);
+
     DescriptorSetLayoutData *ly = &(merged_datalayouts[i]);
     ly->set_number = i;
-    ly->create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    ly->create_info = (VkDescriptorSetLayoutCreateInfo){
+    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+    };
 
-    for (size_t setLayoutIndex = 0; setLayoutIndex < vec_len(set_datalayouts); setLayoutIndex++) {
+    for (size_t setLayoutIndex = 0; setLayoutIndex < vec_len(set_datalayouts); setLayoutIndex++)
+    {
       DescriptorSetLayoutData *setLayoutData = &(set_datalayouts[setLayoutIndex]);
-      if(setLayoutData->set_number == i) {
-        for(size_t bindingIdx = 0; bindingIdx < vec_len(setLayoutData->bindings); bindingIdx++) {
+      if(setLayoutData->set_number == i)
+      {
+        vec_setlen(&realSet.pBindings, vec_len(setLayoutData->bindings));
+
+        for(size_t bindingIdx = 0; bindingIdx < vec_len(setLayoutData->bindings); bindingIdx++)
+        {
           vec_push(&(ly->bindings), &(setLayoutData->bindings[bindingIdx]));
+
+          realSet.pBindings[bindingIdx].pSetWrites   = vec_init(VkWriteDescriptorSet);
+          realSet.pBindings[bindingIdx].pBufferInfos = vec_init(VkDescriptorBufferInfo);
+          realSet.pBindings[bindingIdx].pImageInfos  = vec_init(VkDescriptorImageInfo);
+
+          realSet.pBindings[bindingIdx].binding = setLayoutData->bindings[bindingIdx].binding;
+          realSet.pBindings[bindingIdx].type = setLayoutData->bindings[bindingIdx].descriptorType;
+          realSet.pBindings[bindingIdx].bindingName = setLayoutData->bindingNames[bindingIdx];
         }
       }
     }
@@ -132,40 +157,45 @@ void ev_pipeline_reflectlayout(uint32_t stagesCount, VkShaderStageFlagBits *stag
     ly->create_info.flags = 0;
     ly->create_info.pNext = 0;
 
-    VkDescriptorSetLayout sl;
-    if (ly->create_info.bindingCount > 0) {
-      vkCreateDescriptorSetLayout(ev_vulkan_getlogicaldevice(), &(ly->create_info), NULL, &sl);
-      vec_push(&setLayouts, &sl);
+    if (ly->create_info.bindingCount > 0)
+    {
+      ev_log_debug("binding count: %d", vec_len(ly->bindings));
+      vkCreateDescriptorSetLayout(ev_vulkan_getlogicaldevice(), &(ly->create_info), NULL, &realSet.layout);
+      vec_push(&material->pSets, &realSet);
     }
     else {
       //sl = VK_NULL_HANDLE;
     }
   }
 
+  VkDescriptorSetLayout setLayouts[] = {
+    material->pSets[0].layout,
+    material->pSets[1].layout,
+    material->pSets[2].layout,
+    material->pSets[3].layout,
+  };
+
   VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-    .setLayoutCount = vec_len(setLayouts),
+    .setLayoutCount = vec_len(material->pSets),
     .pSetLayouts = setLayouts,
     .pushConstantRangeCount = NULL,
     .pPushConstantRanges = NULL,
   };
 
-  vkCreatePipelineLayout(ev_vulkan_getlogicaldevice(), &pipelineLayoutCreateInfo, NULL, builtLayout);
+  vkCreatePipelineLayout(ev_vulkan_getlogicaldevice(), &pipelineLayoutCreateInfo, NULL, &material->pipelineLayout);
 
   vec_fini(merged_datalayouts[0].bindings);
   vec_fini(merged_datalayouts[1].bindings);
   vec_fini(merged_datalayouts[2].bindings);
   vec_fini(merged_datalayouts[3].bindings);
 
-  vec_fini(setLayouts);
   vec_fini(set_datalayouts);
   vec_fini(constant_ranges);
 }
 
-void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, VkPipeline* builtPipeline)
+void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, RendererMaterial *material)
 {
-  VkPipelineLayout layout;
-
   VkShaderModule shaderModules[evCreateInfo.stageCount];
   VkPipelineShaderStageCreateInfo shaderStageCreateInfos[evCreateInfo.stageCount];
 
@@ -187,7 +217,8 @@ void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, VkPipeline* bu
       .pName  = "main"
     };
   }
-  ev_pipeline_reflectlayout(evCreateInfo.stageCount, evCreateInfo.pStageFlags, evCreateInfo.pShaderCodes, &layout);
+
+  ev_pipeline_reflectlayout(material);
 
   VkPipelineVertexInputStateCreateInfo pipelineVertexInputState ={
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
@@ -269,7 +300,7 @@ void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, VkPipeline* bu
     .renderPass = evCreateInfo.renderPass,
 
     .subpass = 0,
-    .layout = layout,
+    .layout = material->pipelineLayout,
     .pVertexInputState = &pipelineVertexInputState,
     .pInputAssemblyState = &pipelineInputAssemblyState,
     .pViewportState = &pipelineViewportState,
@@ -285,6 +316,6 @@ void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, VkPipeline* bu
       ev_vulkan_getlogicaldevice(), NULL,
       1,
       &graphicsPipelinesCreateInfo, NULL,
-      builtPipeline)
+      &material->pipeline)
     );
 }
