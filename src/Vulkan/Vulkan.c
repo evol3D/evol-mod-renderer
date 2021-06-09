@@ -440,3 +440,8 @@ void ev_vulkan_allocatedescriptor(VkDescriptorSetAllocateInfo *info, VkDescripto
 {
   VK_ASSERT(vkAllocateDescriptorSets(DATA(logicalDevice), info, set));
 }
+
+void ev_vulkan_destroyimageview(VkImageView imageView)
+{
+  vkDestroyImageView(DATA(logicalDevice), imageView, NULL);
+}

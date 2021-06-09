@@ -1,6 +1,5 @@
 #pragma once
 
-//TODO use this once
 #include <volk.h>
 #include <vk_mem_alloc.h>
 #include <evol/evol.h>
@@ -18,42 +17,6 @@ typedef struct
   VmaAllocation allocation;
   VmaAllocationInfo allocationInfo;
 } EvBuffer;
-
-// typedef struct {
-//     Vec3 position;
-//     Vec3 normal;
-//     Vec3 color;
-// } EvVertex;
-//
-// typedef struct {
-// 	vec(EvVertex) vertices;
-//   uint32_t vertexIndex;
-// } EvMesh;
-
-typedef struct {
-  VkDescriptorType type;
-  void *descriptorData;
-} oldDescriptor;
-
-
-
-typedef struct {
-  Matrix4x4 transform;
-  // EvMesh mesh;
-} EvRenderObject;
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 typedef struct {
   void* data;
@@ -78,13 +41,29 @@ typedef struct {
 } DescriptorSet;
 
 typedef struct {
-  vec(EvBuffer) pMeshBuffers;
-  vec(EvBuffer) pCustomBuffers;
-
   VkPipeline pipeline;
   VkPipelineLayout pipelineLayout;
 
   vec(DescriptorSet) pSets;
-
-  vec(EvRenderObject) pObjects;
 } RendererMaterial;
+
+typedef struct {
+  uint32_t indexCount;
+  uint32_t indexBufferIndex;
+
+	uint32_t vertexCount;
+  uint32_t vertexBufferIndex;
+} Mesh;
+
+typedef struct {
+  float baseColor[3];
+} Material;
+
+typedef struct {
+  Mesh mesh;
+  Material material;
+
+  Matrix4x4 transform;
+
+  uint32_t rendererMaterialIndex;
+} EvRenderObject;

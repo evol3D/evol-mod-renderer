@@ -33,6 +33,7 @@ void ev_vulkan_allocateprimarycommandbuffer(QueueType queueType, VkCommandBuffer
 void ev_vulkan_createimage(VkImageCreateInfo *imageCreateInfo, VmaAllocationCreateInfo *allocationCreateInfo, EvImage *image);
 void ev_vulkan_createimageview(VkFormat imageFormat, VkImage *image, VkImageView* view);
 void ev_vulkan_destroyimage(EvImage *image);
+void ev_vulkan_destroyimageview(VkImageView imageView);
 
 //vulkan buffers
 void ev_vulkan_createbuffer(VkBufferCreateInfo *bufferCreateInfo, VmaAllocationCreateInfo *allocationCreateInfo, EvBuffer *buffer);

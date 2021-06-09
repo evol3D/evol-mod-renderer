@@ -13,6 +13,11 @@ typedef struct {
   VkSwapchainKHR swapchain;
   VkSurfaceFormatKHR surfaceFormat;
 
+  EvImage depthImage;
+  VkImageView depthImageView;
+  VkFormat depthStencilFormat;
+  VkDeviceMemory depthImageMemory;
+
   VkImage images[SWAPCHAIN_MAX_IMAGES];
   VkImageView imageViews[SWAPCHAIN_MAX_IMAGES];
   VkCommandBuffer commandBuffers[SWAPCHAIN_MAX_IMAGES];
