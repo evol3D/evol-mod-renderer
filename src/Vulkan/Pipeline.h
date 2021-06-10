@@ -30,4 +30,4 @@ typedef struct
   int32_t                                          basePipelineIndex;
 } EvGraphicsPipelineCreateInfo;
 
-void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, RendererMaterial *material);
+void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, Pipeline *material);

@@ -4,6 +4,13 @@
 #include <vk_mem_alloc.h>
 #include <evol/evol.h>
 
+typedef enum {
+    VERTEXRESOURCE,
+    INDEXRESOURCE,
+    MATERIALRESOURCE,
+    CUSTOMBUFFER,
+} RESOURCETYPE;
+
 typedef struct
 {
   VkImage image;
@@ -18,6 +25,30 @@ typedef struct
   VmaAllocationInfo allocationInfo;
 } EvBuffer;
 
+typedef struct
+{
+  EvBuffer buffer;
+  void *mappedData;
+} UBO;
+
+typedef struct {
+  Matrix4x4 projectionMat;
+  Matrix4x4 viewMat;
+} CameraData;
+
+typedef struct {
+  evstring shaderBindingName;
+  RESOURCETYPE resourceType;
+  uint32_t bufferize;
+  void *data;
+  uint32_t index;
+} ShaderData;
+
+typedef struct {
+  Matrix4x4 tranform;
+  uint32_t meshIndex
+} MeshPushConstants;
+
 typedef struct {
   void* data;
   size_t length;
@@ -29,9 +60,7 @@ typedef struct {
   VkDescriptorType type;
   const uint32_t *bindingName;
 
-  vec(VkWriteDescriptorSet)   pSetWrites;
-  vec(VkDescriptorBufferInfo) pBufferInfos;
-  vec(VkDescriptorImageInfo)  pImageInfos;
+  uint32_t writtenSetsCount;
 } Binding;
 
 typedef struct {
@@ -45,7 +74,13 @@ typedef struct {
   VkPipelineLayout pipelineLayout;
 
   vec(DescriptorSet) pSets;
-} RendererMaterial;
+} Pipeline;
+
+typedef struct {
+  uint32_t indexBufferIndex;
+  uint32_t vertexBufferIndex;
+  uint32_t materialIndex;
+} ShaderMesh;
 
 typedef struct {
   uint32_t indexCount;
@@ -60,10 +95,9 @@ typedef struct {
 } Material;
 
 typedef struct {
+  uint32_t materialIndex;
+  uint32_t pipelineIndex;
+  uint32_t meshIndex;
+
   Mesh mesh;
-  Material material;
-
-  Matrix4x4 transform;
-
-  uint32_t rendererMaterialIndex;
 } EvRenderObject;

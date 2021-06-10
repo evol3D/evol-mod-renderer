@@ -32,7 +32,7 @@ void descriptorSetLayoutData_destr(DescriptorSetLayoutData *data)
   vec_fini(data->bindings);
 }
 
-void ev_pipeline_reflectlayout(EvGraphicsPipelineCreateInfo pipelineCreateInfo, RendererMaterial *material)
+void ev_pipeline_reflectlayout(EvGraphicsPipelineCreateInfo pipelineCreateInfo, Pipeline *material)
 {
   vec(VkPushConstantRange) constant_ranges = vec_init(VkPushConstantRange);
   vec(DescriptorSetLayoutData) set_datalayouts = vec_init(DescriptorSetLayoutData, descriptorSetLayoutData_destr);
@@ -95,10 +95,12 @@ void ev_pipeline_reflectlayout(EvGraphicsPipelineCreateInfo pipelineCreateInfo, 
     assert(result == SPV_REFLECT_RESULT_SUCCESS);
 
     if (count > 0) {
-      VkPushConstantRange pcs = {0};
-      pcs.offset = pconstants[0]->offset;
-      pcs.size = pconstants[0]->size;
-      pcs.stageFlags = pipelineCreateInfo.pShaders[stageIndex].stage;
+      ev_log_debug("push constat :%d %d %d\n\n",count, pconstants[stageIndex]->offset, pconstants[stageIndex]->size);
+      VkPushConstantRange pcs = {
+        .offset = pconstants[stageIndex]->offset,
+        .size = pconstants[stageIndex]->size,
+        .stageFlags = pipelineCreateInfo.pShaders[stageIndex].stage,
+      };
 
       vec_push(&constant_ranges, &pcs);
     }
@@ -141,13 +143,10 @@ void ev_pipeline_reflectlayout(EvGraphicsPipelineCreateInfo pipelineCreateInfo, 
         {
           vec_push(&(ly->bindings), &(setLayoutData->bindings[bindingIdx]));
 
-          realSet.pBindings[bindingIdx].pSetWrites   = vec_init(VkWriteDescriptorSet);
-          realSet.pBindings[bindingIdx].pBufferInfos = vec_init(VkDescriptorBufferInfo);
-          realSet.pBindings[bindingIdx].pImageInfos  = vec_init(VkDescriptorImageInfo);
-
           realSet.pBindings[bindingIdx].binding = setLayoutData->bindings[bindingIdx].binding;
           realSet.pBindings[bindingIdx].type = setLayoutData->bindings[bindingIdx].descriptorType;
           realSet.pBindings[bindingIdx].bindingName = setLayoutData->bindingNames[bindingIdx];
+          realSet.pBindings[bindingIdx].writtenSetsCount = 0;
         }
       }
     }
@@ -179,8 +178,8 @@ void ev_pipeline_reflectlayout(EvGraphicsPipelineCreateInfo pipelineCreateInfo, 
     .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
     .setLayoutCount = vec_len(material->pSets),
     .pSetLayouts = setLayouts,
-    .pushConstantRangeCount = NULL,
-    .pPushConstantRanges = NULL,
+    .pushConstantRangeCount = vec_len(constant_ranges),
+    .pPushConstantRanges = constant_ranges,
   };
 
   vkCreatePipelineLayout(ev_vulkan_getlogicaldevice(), &pipelineLayoutCreateInfo, NULL, &material->pipelineLayout);
@@ -194,7 +193,7 @@ void ev_pipeline_reflectlayout(EvGraphicsPipelineCreateInfo pipelineCreateInfo, 
   vec_fini(constant_ranges);
 }
 
-void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, RendererMaterial *material)
+void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, Pipeline *material)
 {
   VkShaderModule shaderModules[evCreateInfo.stageCount];
   VkPipelineShaderStageCreateInfo shaderStageCreateInfos[evCreateInfo.stageCount];

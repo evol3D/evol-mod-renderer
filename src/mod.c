@@ -9,47 +9,40 @@
 #include <DescriptorManager.h>
 #include <VulkanQueueManager.h>
 
-#include <cglm/cglm.h>
-
 #define EV_WINDOW_VULKAN_SUPPORT
 #define IMPORT_MODULE evmod_glfw
 #include IMPORT_MODULE_H
-
 #define IMPORT_MODULE evmod_assets
+#include IMPORT_MODULE_H
+#define IMPORT_MODULE evmod_game
 #include IMPORT_MODULE_H
 
 #define DATA(X) RendererData.X
 
-typedef struct UBO
-{
-    EvBuffer buffer;
-    void *mappedData;
-} UBO;
-
-// VkDescriptorSet cameraDescriptorSet;
-// VkDescriptorSetLayout cameraSetLayout;
-// DescriptorSet cameraDescriptor;
-// Binding cameraBinding;
-
 struct ev_Renderer_Data
 {
   WindowHandle windowHandle;
-
   EvSwapchain Swapchain;
-
   VkFramebuffer framebuffers[SWAPCHAIN_MAX_IMAGES];
-
   VkRenderPass renderPass;
-
   VmaPool storagePool;
 
-  // UBO cameraBuffer;
+  DescriptorSet cameraSet;
+  UBO cameraBuffer;
 
   vec(EvRenderObject) objects;
-  vec(RendererMaterial) materials;
-  vec(EvBuffer) meshBuffers;
+  vec(Pipeline) pipelines;
+  vec(Material) materials;
+
+  vec(EvBuffer) vertexBuffers;
+  vec(EvBuffer) indexBuffers;
+  vec(EvBuffer) materialBuffers;
   vec(EvBuffer) customBuffers;
 } RendererData;
+
+evolmodule_t game_module;
+evolmodule_t asset_module;
+evolmodule_t window_module;
 
 EvRenderObject triangleObj;
 
@@ -73,12 +66,12 @@ void ev_rendererbackend_allocatestagingbuffer(unsigned long long bufferSize, EvB
 int ev_renderer_registervertexbuffer(void *vertices, unsigned long long size, vec(EvBuffer) vertexBuffers);
 void ev_rendererbackend_copybuffer(unsigned long long size, EvBuffer *src, EvBuffer *dst);
 
+void ev_rendererbackend_freeubo(UBO *ubo);
+
 #define EV_USAGEFLAGS_RESOURCE_BUFFER VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
 
-int ev_renderer_registerbuffer(void *data, unsigned long long size, vec(EvBuffer) buffers)
+uint32_t ev_renderer_registerbuffer(void *data, unsigned long long size, vec(EvBuffer) *buffers)
 {
-  unsigned int idx = vec_len(buffers);
-
   EvBuffer newBuffer;
   ev_rendererbackend_allocatebufferinpool(DATA(storagePool), size, EV_USAGEFLAGS_RESOURCE_BUFFER, &newBuffer);
 
@@ -89,15 +82,14 @@ int ev_renderer_registerbuffer(void *data, unsigned long long size, vec(EvBuffer
 
   ev_vulkan_destroybuffer(&newStagingBuffer);
 
-  vec_push(&buffers, &newBuffer);
-
-  return idx;
+  return vec_push(buffers, &newBuffer);
 }
 
-void build_descriptors_for_a_binding(DescriptorSet set, Binding binding, void *data)
+void UpdateDescriptorSet(DescriptorSet set, Binding *binding, void *data)
 {
+  VkWriteDescriptorSet setWrite;
 
-  switch(binding.type)
+  switch(binding->type)
   {
     case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
     case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
@@ -109,75 +101,13 @@ void build_descriptors_for_a_binding(DescriptorSet set, Binding binding, void *d
           .offset = 0,
           .range = VK_WHOLE_SIZE,
         };
-        VkWriteDescriptorSet setWrite = {
+        setWrite = (VkWriteDescriptorSet){
           .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
           .descriptorCount = 1,
-          .descriptorType = binding.type,
+          .descriptorType = binding->type,
           .dstSet = set.set,
-          .dstBinding = binding.binding,
-          .dstArrayElement = 0,
-          .pBufferInfo = &bufferInfo,
-        };
-
-        vec_push(&binding.pBufferInfos, &bufferInfo);
-        vec_push(&binding.pSetWrites, &setWrite);
-        break;
-      }
-    case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-      break;
-
-    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
-    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
-    case VK_DESCRIPTOR_TYPE_SAMPLER:
-    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-    case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
-        // d.imageInfo = (VkDescriptorImageInfo){
-        //   .imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        //   .imageInfo.imageView = ((EvTexture*)data)->imageView,
-        //   .imageInfo.sampler = ((EvTexture*)descriptors[i].descriptorData)->sampler,
-        // }
-        //
-        // setWrites[i] = (VkWriteDescriptorSet)
-        // {
-        //   .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        //   .dstSet = descriptorSet,
-        //   .dstBinding = 0,
-        //   .dstArrayElement = i,
-        //   .descriptorType = (VkDescriptorType)descriptors[i].type,
-        //   .descriptorCount = 1,
-        //   .pImageInfo = &imageInfos[i]
-        // };
-        // break;
-    default:
-      ;
-  }
-
-  vkUpdateDescriptorSets(ev_vulkan_getlogicaldevice(), vec_len(binding.pSetWrites), binding.pSetWrites, 0, NULL);
-}
-
-void build_descriptors_for_a_binding1(DescriptorSet set, Binding binding, void *data)
-{
-
-  switch(binding.type)
-  {
-    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
-    case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
-    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-      {
-        VkDescriptorBufferInfo bufferInfo = {
-          .buffer = ((EvBuffer*)data)->buffer,
-          .offset = 0,
-          .range = VK_WHOLE_SIZE,
-        };
-        VkWriteDescriptorSet setWrite = {
-          .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-          .descriptorCount = 1,
-          .descriptorType = binding.type,
-          .dstSet = set.set,
-          .dstBinding = binding.binding,
-          .dstArrayElement = 0,
+          .dstBinding = binding->binding,
+          .dstArrayElement = binding->writtenSetsCount,
           .pBufferInfo = &bufferInfo,
         };
         break;
@@ -212,9 +142,9 @@ void build_descriptors_for_a_binding1(DescriptorSet set, Binding binding, void *
       ;
   }
 
-  vkUpdateDescriptorSets(ev_vulkan_getlogicaldevice(), vec_len(binding.pSetWrites), binding.pSetWrites, 0, NULL);
+  binding->writtenSetsCount++;
+  vkUpdateDescriptorSets(ev_vulkan_getlogicaldevice(), 1, &setWrite, 0, NULL);
 }
-
 
 
 
@@ -247,6 +177,13 @@ void ev_rendererbackend_allocateubo(unsigned long long bufferSize, bool persiste
     vmaMapMemory(ev_vulkan_getvmaallocator, ubo->buffer.allocation, &ubo->mappedData);
   else
     ubo->mappedData = 0;
+}
+
+void ev_rendererbackend_freeubo(UBO *ubo)
+{
+  if(ubo->mappedData)
+    vmaUnmapMemory(ev_vulkan_getlogicaldevice(), ubo->buffer.allocation);
+  ev_vulkan_destroybuffer(&ubo->buffer);
 }
 
 
@@ -363,17 +300,20 @@ void ev_renderer_createframebuffers()
 
 
 
-
-
 void ev_rendererbackend_updateubo(unsigned long long bufferSize, const void *data, UBO *ubo)
 {
   if(ubo->mappedData)
-    memcpy(ubo->mappedData, data, bufferSize);
+  {
+    ev_log_debug("%p", data);
+    memcpy(ubo->mappedData, (CameraData*)data, bufferSize);
+  }
   else
   {
-    vmaMapMemory(ev_vulkan_getvmaallocator, ubo->buffer.allocation, &ubo->mappedData);
+    vmaMapMemory(ev_vulkan_getvmaallocator(), ubo->buffer.allocation, &ubo->mappedData);
     memcpy(ubo->mappedData, data, bufferSize);
-    vmaUnmapMemory(ev_vulkan_getvmaallocator, ubo->buffer.allocation);
+    vmaUnmapMemory(ev_vulkan_getvmaallocator(), ubo->buffer.allocation);
+
+    ubo->mappedData = 0;
   }
 }
 
@@ -399,22 +339,33 @@ void recreateSwapChain()
 
 void draw(VkCommandBuffer cmd)
 {
-  // build_descriptors_for_a_binding1(cameraDescriptor, cameraBinding, &(DATA(cameraBuffer).buffer));
+  CameraData cam;
+  Camera->getViewMat(NULL, NULL, cam.viewMat);
+  Camera->getProjectionMat(NULL, NULL, cam.projectionMat);
+
+  ev_rendererbackend_updateubo(sizeof(CameraData), &cam, &DATA(cameraBuffer));
 
   for (size_t objectIndex = 0; objectIndex < vec_len(DATA(objects)); objectIndex++)
   {
     EvRenderObject object = DATA(objects)[objectIndex];
-    RendererMaterial rendererMaterial = DATA(materials)[object.rendererMaterialIndex];
+    Pipeline pipeline = DATA(pipelines)[object.pipelineIndex];
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, rendererMaterial.pipeline);
+    MeshPushConstants pushconstant;
+    GameObject player = Scene->getObject(NULL, "Player");
+    glm_mat4_dup(*Object->getWorldTransform(NULL, player), pushconstant.tranform);
+    pushconstant.meshIndex = object.meshIndex;
+
+    vkCmdPushConstants(cmd, pipeline.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &pushconstant);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline);
 
     VkDescriptorSet ds[4];
-    for (size_t i = 0; i < vec_len(rendererMaterial.pSets); i++)
+    for (size_t i = 1; i < vec_len(pipeline.pSets); i++)
     {
-      ds[i] = rendererMaterial.pSets[i].set;
+      ds[i] = pipeline.pSets[i].set;
     }
-    //ds[0] = cameraDescriptorSet;
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, rendererMaterial.pipelineLayout, 0, vec_len(rendererMaterial.pSets), ds, 0, 0);
+    ds[0] = DATA(cameraSet).set;
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipelineLayout, 0, vec_len(pipeline.pSets), ds, 0, 0);
 
     vkCmdDraw(cmd, object.mesh.indexCount, 1, 0, 0);
   }
@@ -670,7 +621,7 @@ void ev_renderer_createresourcememorypool(unsigned long long blockSize, unsigned
 
     VmaAllocationCreateInfo allocationCreateInfo = {
 		.usage = VMA_MEMORY_USAGE_GPU_ONLY,
-    };
+  };
 
     vmaFindMemoryTypeIndexForBufferInfo(ev_vulkan_getvmaallocator(), &sampleBufferCreateInfo, &allocationCreateInfo, &memoryType);
   }
@@ -772,43 +723,42 @@ void ev_rendererbackend_copybuffer(unsigned long long size, EvBuffer *src, EvBuf
 
 
 
-typedef enum {
-    MESHRESOURCE,
-    CUSTOMBUFFER,
-} RESOURCETYPE;
-
-typedef struct {
-  evstring shaderBindingName;
-  RESOURCETYPE resourceType;
-  uint32_t bufferize;
-  void *data;
-} ShaderData;
 
 
 
-void registerResource(ShaderData *shaderData)
+
+
+void registerBuffer(ShaderData *shaderData)
 {
   switch (shaderData->resourceType)
   {
     uint32_t resourceIndex;
 
-    case MESHRESOURCE:
-      resourceIndex = ev_renderer_registerbuffer(shaderData->data, shaderData->bufferize, DATA(meshBuffers));
-      shaderData->data = &DATA(meshBuffers)[resourceIndex];
+    case VERTEXRESOURCE:
+      shaderData->index = ev_renderer_registerbuffer(shaderData->data, shaderData->bufferize, &DATA(vertexBuffers));
+      shaderData->data = &DATA(vertexBuffers)[shaderData->index];
+      break;
+    case INDEXRESOURCE:
+      shaderData->index = ev_renderer_registerbuffer(shaderData->data, shaderData->bufferize, &DATA(indexBuffers));
+      shaderData->data = &DATA(indexBuffers)[shaderData->index];
+      break;
+    case MATERIALRESOURCE:
+      shaderData->index = ev_renderer_registerbuffer(shaderData->data, shaderData->bufferize, &DATA(materialBuffers));
+      shaderData->data = &DATA(materialBuffers)[shaderData->index];
       break;
     case CUSTOMBUFFER:
-      resourceIndex = ev_renderer_registerbuffer(shaderData->data, shaderData->bufferize, DATA(customBuffers));
-      shaderData->data = &DATA(customBuffers)[resourceIndex];
+      shaderData->index = ev_renderer_registerbuffer(shaderData->data, shaderData->bufferize, &DATA(customBuffers));
+      shaderData->data = &DATA(customBuffers)[shaderData->index];
       break;
   }
 }
 
-bool isNewMaterial()
+bool isnewPipeline()
 {
   return true;
 }
 
-void destroyMaterial(RendererMaterial *material)
+void destroyMaterial(Pipeline *material)
 {
   vkDestroyPipeline(ev_vulkan_getlogicaldevice(), material->pipeline, NULL);
   vkDestroyPipelineLayout(ev_vulkan_getlogicaldevice(), material->pipelineLayout, NULL);
@@ -819,62 +769,91 @@ void destroyMaterial(RendererMaterial *material)
   }
 }
 
-void ev_renderer_registerObject(MeshAsset mesh, vec(Shader) shaders, uint32_t dataCount ,ShaderData *shaderData)
+void ev_renderer_registerObject(MeshAsset mesh, Material material, vec(Shader) shaders, uint32_t customDataCount ,ShaderData *customShaderData)
 {
-  RendererMaterial newMaterial;
+  EvRenderObject object = { 0 };
+  object.mesh.indexCount = mesh.indexCount;
+  object.mesh.vertexCount = mesh.vertexCount;
 
-  if(isNewMaterial())
+  if(isnewPipeline())
   {
-    newMaterial.pSets = vec_init(DescriptorSet);
+    Pipeline newPipeline;
+    newPipeline.pSets = vec_init(DescriptorSet);
 
     EvGraphicsPipelineCreateInfo pipelineCreateInfo = {
       .stageCount = vec_len(shaders),
       .pShaders = shaders,
       .renderPass = DATA(renderPass),
     };
+    ev_pipeline_build(pipelineCreateInfo, &newPipeline);
 
-    ev_pipeline_build(pipelineCreateInfo, &newMaterial);
+    for (size_t i = 0; i < vec_len(newPipeline.pSets); i++)
+      ev_descriptormanager_allocate(newPipeline.pSets[i].layout, &newPipeline.pSets[i].set);
 
-    for (size_t i = 0; i < vec_len(newMaterial.pSets); i++)
-    {
-      ev_descriptormanager_allocate(newMaterial.pSets[i].layout, &newMaterial.pSets[i].set);
-    }
-
-    vec_push(&DATA(materials), &newMaterial);
+    object.pipelineIndex = vec_push(&DATA(pipelines), &newPipeline);
   }
 
-  for (size_t i = 0; i < dataCount; i++)
-  {
-    registerResource(shaderData + i);
-  }
+  ShaderData vertexData = {
+    .shaderBindingName = evstring_new("VertexBuffers"),
+    .resourceType = VERTEXRESOURCE,
+    .bufferize = mesh.vertexBuferSize,
+    .data = mesh.vertexData,
+  };
+  registerBuffer(&vertexData);
 
-  //push vertexbuffer
-  for (size_t i = 0; i < vec_len(newMaterial.pSets); i++)
+  ShaderData indexData = {
+    .shaderBindingName = evstring_new("IndexBuffers"),
+    .resourceType = INDEXRESOURCE,
+    .bufferize = mesh.indexBuferSize,
+    .data = mesh.indexData,
+  };
+  registerBuffer(&indexData);
+
+  ShaderData materialData = {
+    .shaderBindingName = evstring_new("MaterialBuffers"),
+    .resourceType = MATERIALRESOURCE,
+    .bufferize = sizeof(material),
+    .data = &material,
+  };
+  registerBuffer(&materialData);
+
+  ShaderMesh m = {
+    .indexBufferIndex = indexData.index,
+    .vertexBufferIndex = vertexData.index,
+  };
+  ShaderData meshData = {
+    .shaderBindingName = evstring_new("MeshBuffers"),
+    .resourceType = CUSTOMBUFFER,
+    .bufferize = sizeof(Material),
+    .data = &m,
+  };
+  registerBuffer(&meshData);
+
+  //TODO add custom data
+  ShaderData defaultData[] = {
+    indexData,
+    vertexData,
+    meshData,
+    materialData,
+  };
+
+  //TODO change to map
+  for (size_t i = 0; i < vec_len(DATA(pipelines)[object.pipelineIndex].pSets); i++)
   {
-    for (size_t j = 0; j < vec_len(newMaterial.pSets[i].pBindings); j++)
+    for (size_t j = 0; j < vec_len(DATA(pipelines)[object.pipelineIndex].pSets[i].pBindings); j++)
     {
-      for (size_t k = 0; k < dataCount; k++)
+      for (size_t k = 0; k < ARRAYSIZE(defaultData); k++)
       {
-        if (!strcmp(newMaterial.pSets[i].pBindings[j].bindingName, shaderData[k].shaderBindingName))
+        if (!strcmp(DATA(pipelines)[object.pipelineIndex].pSets[i].pBindings[j].bindingName, defaultData[k].shaderBindingName))
         {
           ev_log_debug("set: %d, binding: %d writing", i, j);
-          build_descriptors_for_a_binding(newMaterial.pSets[i], newMaterial.pSets[i].pBindings[j], shaderData[k].data);
+          UpdateDescriptorSet(DATA(pipelines)[object.pipelineIndex].pSets[i], &DATA(pipelines)[object.pipelineIndex].pSets[i].pBindings[j], defaultData[k].data);
         }
       }
     }
   }
 
-  Mesh m = {
-    .indexCount = mesh.indexCount,
-
-    .vertexCount = mesh.vertexCount,
-  };
-
-  EvRenderObject object = {
-    .mesh = m,
-    .rendererMaterialIndex = 0,
-  };
-
+  object.meshIndex = meshData.index;
   vec_push(&DATA(objects), &object);
 }
 
@@ -901,14 +880,17 @@ void addObject()
     .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
   });
 
-  ShaderData shaderData[] = {
-    {evstring_new("ResourceBuffers"), MESHRESOURCE, avocado_mesh.vertexBuferSize, avocado_mesh.vertexData},
-    {evstring_new("PositionBuffers"), CUSTOMBUFFER, avocado_mesh.indexBuferSize, avocado_mesh.indexData},
-    // {evstring_new("ColorBuffers"), CUSTOMBUFFER, 1 * sizeof(EvVertex), &color},
-    // {evstring_new("ssBuffers"), CUSTOMBUFFER, 1 * sizeof(EvVertex), &ss},
+  ShaderData customShaderData[] = {
+    // {evstring_new("MeshBuffers"),     CUSTOMBUFFER, sizeof(Material), &m},
+    {evstring_new("ResourceBuffers"), VERTEXRESOURCE, avocado_mesh.vertexBuferSize, avocado_mesh.vertexData},
+    // {evstring_new("PositionBuffers"), CUSTOMBUFFER, avocado_mesh.indexBuferSize, avocado_mesh.indexData},
   };
 
-  ev_renderer_registerObject(avocado_mesh, shaders, ARRAYSIZE(shaderData), shaderData);
+  Material material = {
+    .baseColor = {1.0, 1.0, 1.0},
+  };
+
+  ev_renderer_registerObject(avocado_mesh, material, shaders, ARRAYSIZE(customShaderData), customShaderData);
 
   vec_fini(shaders);
 
@@ -916,11 +898,6 @@ void addObject()
   Asset->free(vertShader_asset);
   Asset->free(fragShader_asset);
 }
-
-// void destroyMaterial(rendererMaterial material);
-// {
-//   vkDestroyPipeline(ev_vulkan_getlogicaldevice(), material.pipeline, NULL);
-// }
 
 void setWindow(WindowHandle handle)
 {
@@ -933,73 +910,85 @@ void setWindow(WindowHandle handle)
   ev_renderer_createrenderpass();
   ev_renderer_createframebuffers();
 
-// ev_rendererbackend_allocateubo(128, 0, &DATA(cameraBuffer));
-// {
-//   VkDescriptorSetLayoutBinding bindings[] =
-//   {
-//     {
-//       .binding = 0,
-//       .descriptorCount = 1,
-//       .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-//       .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-//     }
-//   };
-//   VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo =
-//   {
-//     .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-//     .bindingCount = ARRAYSIZE(bindings),
-//     .pBindings = bindings
-//   };
-//   VK_ASSERT(vkCreateDescriptorSetLayout(ev_vulkan_getlogicaldevice(), &descriptorSetLayoutCreateInfo, NULL, &cameraSetLayout));
-//
-//   ev_descriptormanager_allocate(cameraSetLayout, &cameraDescriptorSet);
-//
-//   cameraDescriptor = (DescriptorSet){
-//     .set = cameraDescriptorSet,
-//   };
-//
-//   cameraBinding = (Binding){
-//     .binding = 0,
-//     .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-//
-//     .pSetWrites = vec_init(VkWriteDescriptorSet),
-//     .pBufferInfos = vec_init(VkDescriptorBufferInfo),
-//     .pImageInfos = vec_init(VkDescriptorImageInfo),
-//   };
-// }
-
-addObject();
+  addObject();
 }
 
-evolmodule_t asset_mod;
-evolmodule_t window_module;
+void ev_renderer_globalsetsinit()
+{
+  ev_rendererbackend_allocateubo(sizeof(CameraData), 0, &DATA(cameraBuffer));
+
+  VkDescriptorSetLayoutBinding bindings[] =
+  {
+    {
+      .binding = 0,
+      .descriptorCount = 1,
+      .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+      .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+    }
+  };
+  VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo =
+  {
+    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+    .bindingCount = ARRAYSIZE(bindings),
+    .pBindings = bindings
+  };
+
+  DATA(cameraSet).pBindings = vec_init(Binding);
+  vec_push(&DATA(cameraSet).pBindings, &(Binding) {
+    .binding = 0,
+    .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+  });
+
+  VK_ASSERT(vkCreateDescriptorSetLayout(ev_vulkan_getlogicaldevice(), &descriptorSetLayoutCreateInfo, NULL, &DATA(cameraSet).layout));
+
+  ev_descriptormanager_allocate(DATA(cameraSet).layout, &DATA(cameraSet).set);
+
+  for (size_t i = 0; i < vec_len(DATA(cameraSet).pBindings); i++)
+  {
+    UpdateDescriptorSet(DATA(cameraSet), &DATA(cameraSet).pBindings[i], &(DATA(cameraBuffer).buffer));
+  }
+}
 
 EV_CONSTRUCTOR
 {
-  asset_mod = evol_loadmodule("assetmanager");   DEBUG_ASSERT(asset_mod);
-  imports(asset_mod  , (AssetManager, Asset, MeshLoader, ShaderLoader))
+  game_module = evol_loadmodule("game");          DEBUG_ASSERT(game_module);
+  imports(game_module  , (Game, Camera, Object, Scene));
 
-  window_module  = evol_loadmodule("window");  DEBUG_ASSERT(window_module);
-  IMPORT_NAMESPACE(Window, window_module);
+  asset_module = evol_loadmodule("assetmanager"); DEBUG_ASSERT(asset_module);
+  imports(asset_module  , (AssetManager, Asset, MeshLoader, ShaderLoader));
+
+  window_module  = evol_loadmodule("window");     DEBUG_ASSERT(window_module);
+  imports(window_module, (Window));
 
   DATA(objects) = vec_init(EvRenderObject);
-  DATA(materials) = vec_init(RendererMaterial, NULL, destroyMaterial);
-  DATA(meshBuffers) = vec_init(EvBuffer, NULL, ev_vulkan_destroybuffer);
+  DATA(pipelines) = vec_init(Pipeline, NULL, destroyMaterial);
+  DATA(materials) = vec_init(Material, NULL, destroyMaterial);
+
+  DATA(vertexBuffers) = vec_init(EvBuffer, NULL, ev_vulkan_destroybuffer);
+  DATA(indexBuffers) = vec_init(EvBuffer, NULL, ev_vulkan_destroybuffer);
+  DATA(materialBuffers) = vec_init(EvBuffer, NULL, ev_vulkan_destroybuffer);
   DATA(customBuffers) = vec_init(EvBuffer, NULL, ev_vulkan_destroybuffer);
 
   ev_vulkan_init();
+
   ev_descriptormanager_init();
+
   ev_renderer_createresourcememorypool(128ull * 1024 * 1024, 1, 4, &DATA(storagePool));
+
+  ev_renderer_globalsetsinit();
 }
 
 EV_DESTRUCTOR
 {
   vkWaitForFences(ev_vulkan_getlogicaldevice(), DATA(Swapchain).imageCount, DATA(Swapchain).frameSubmissionFences, VK_TRUE, ~0ull);
 
-  //destroy renderermaterial
+  ev_rendererbackend_freeubo(&DATA(cameraBuffer));
+
+  vec_fini(DATA(materialBuffers));
   vec_fini(DATA(customBuffers));
-  vec_fini(DATA(meshBuffers));
-  vec_fini(DATA(materials));
+  vec_fini(DATA(vertexBuffers));
+  vec_fini(DATA(indexBuffers));
+  vec_fini(DATA(pipelines));
   vec_fini(DATA(objects));
 
   ev_renderer_destroyframebuffer();
@@ -1012,7 +1001,8 @@ EV_DESTRUCTOR
   ev_vulkan_deinit();
 
   evol_unloadmodule(window_module);
-  evol_unloadmodule(asset_mod);
+  evol_unloadmodule(asset_module);
+  evol_unloadmodule(game_module);
 }
 
 EV_BINDINGS
