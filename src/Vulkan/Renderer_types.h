@@ -45,7 +45,7 @@ typedef struct {
 } ShaderData;
 
 typedef struct {
-  Matrix4x4 tranform;
+  Matrix4x4 transform;
   uint32_t meshIndex
 } MeshPushConstants;
 
@@ -91,7 +91,7 @@ typedef struct {
 } Mesh;
 
 typedef struct {
-  float baseColor[3];
+  Vec4 baseColor;
 } Material;
 
 typedef struct {
@@ -100,4 +100,4 @@ typedef struct {
   uint32_t meshIndex;
 
   Mesh mesh;
-} EvRenderObject;
+} RenderComponent;

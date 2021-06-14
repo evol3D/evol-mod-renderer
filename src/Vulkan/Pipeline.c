@@ -95,7 +95,6 @@ void ev_pipeline_reflectlayout(EvGraphicsPipelineCreateInfo pipelineCreateInfo, 
     assert(result == SPV_REFLECT_RESULT_SUCCESS);
 
     if (count > 0) {
-      ev_log_debug("push constat :%d %d %d\n\n",count, pconstants[stageIndex]->offset, pconstants[stageIndex]->size);
       VkPushConstantRange pcs = {
         .offset = pconstants[stageIndex]->offset,
         .size = pconstants[stageIndex]->size,
@@ -158,7 +157,6 @@ void ev_pipeline_reflectlayout(EvGraphicsPipelineCreateInfo pipelineCreateInfo, 
 
     if (ly->create_info.bindingCount > 0)
     {
-      ev_log_debug("binding count: %d", vec_len(ly->bindings));
       vkCreateDescriptorSetLayout(ev_vulkan_getlogicaldevice(), &(ly->create_info), NULL, &realSet.layout);
       vec_push(&material->pSets, &realSet);
     }
@@ -201,7 +199,9 @@ void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, Pipeline *mate
   {
     if (evCreateInfo.stageCount == 0) return;
     if (evCreateInfo.renderPass == NULL) return;
+
   }
+
 
   for (size_t stgIndex = 0; stgIndex < evCreateInfo.stageCount; stgIndex++)
   {

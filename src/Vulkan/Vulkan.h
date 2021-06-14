@@ -23,7 +23,7 @@ void ev_vulkan_destroyswapchain(VkSwapchainKHR swapchain);
 
 //memory pools
 void ev_vulkan_allocatememorypool(VmaPoolCreateInfo *poolCreateInfo, VmaPool* pool);
-void ev_vulkan_allocatebufferinpool(VkBufferCreateInfo *bufferCreateInfo, VmaPool pool, EvBuffer *buffer);
+void ev_vulkan_allocatebufferinpool(VmaPool pool, unsigned long long bufferSize, unsigned long long usageFlags, EvBuffer *buffer);
 void ev_vulkan_freememorypool(VmaPool pool);
 void ev_vulkan_memorydump();
 
@@ -54,3 +54,14 @@ void ev_vulkan_createdescriptorpool(VkDescriptorPoolCreateInfo *info, VkDescript
 void ev_vulkan_destroydescriptorpool(VkDescriptorPool *pool);
 
 void ev_vulkan_allocatedescriptor(VkDescriptorSetAllocateInfo *info, VkDescriptorSet *set);
+
+void ev_vulkan_allocateubo(unsigned long long bufferSize, bool persistentMap, UBO *ubo);
+void ev_vulkan_updateubo(unsigned long long bufferSize, const void *data, UBO *ubo);
+void ev_vulkan_freeubo(UBO *ubo);
+void ev_vulkan_copybuffer(unsigned long long size, EvBuffer *src, EvBuffer *dst);
+void ev_vulkan_updatestagingbuffer(EvBuffer *buffer, unsigned long long bufferSize, const void *data);
+void ev_vulkan_allocatestagingbuffer(unsigned long long bufferSize, EvBuffer *buffer);
+void ev_vulkan_createresourcememorypool(unsigned long long blockSize, unsigned int minBlockCount, unsigned int maxBlockCount, VmaPool *pool);
+EvBuffer ev_vulkan_registerbuffer(void *data, unsigned long long size);
+void ev_vulkan_destroypipeline(VkPipeline pipeline);
+void ev_vulkan_destroypipelinelayout(VkPipelineLayout pipelineLayout);
