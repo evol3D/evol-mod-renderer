@@ -1,0 +1,14 @@
+TYPE(Mesh, struct {
+  uint32_t indexCount;
+  uint32_t indexBufferIndex;
+
+	uint32_t vertexCount;
+  uint32_t vertexBufferIndex;
+})
+
+TYPE(RenderComponent, struct {
+  uint32_t materialIndex;
+  uint32_t pipelineIndex;
+
+  Mesh mesh;
+})
