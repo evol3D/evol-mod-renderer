@@ -141,7 +141,7 @@ void ev_swapchain_destroy(EvSwapchain *Swapchain)
   for (size_t i = 0; i < Swapchain->imageCount; i++)
     vkDestroyImageView(ev_vulkan_getlogicaldevice(), Swapchain->imageViews[i], NULL);
 
-  vkDestroySwapchainKHR(ev_vulkan_getlogicaldevice(), Swapchain->swapchain, NULL);
+  /* vkDestroySwapchainKHR(ev_vulkan_getlogicaldevice(), Swapchain->swapchain, NULL); */
 
   ev_renderer_destroysurface(Swapchain->surface);
 }

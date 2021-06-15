@@ -131,7 +131,8 @@ void draw(VkCommandBuffer cmd)
       ev_vulkan_writeintobinding(DATA(resourcesSet), &DATA(resourcesSet).pBindings[2], &(DATA(indexBuffers)[i].buffer));
     }
 
-    RendererData.materialsBuffer = ev_vulkan_registerbuffer(RendererData.materialLibrary.store, sizeof(Material) * vec_len(RendererData.materialLibrary.store));
+    size_t materialBufferLength = MAX(vec_len(RendererData.materialLibrary.store), vec_capacity(RendererData.materialLibrary.store));
+    RendererData.materialsBuffer = ev_vulkan_registerbuffer(RendererData.materialLibrary.store, sizeof(Material) * materialBufferLength);
     ev_vulkan_writeintobinding(DATA(resourcesSet), &DATA(resourcesSet).pBindings[3], &RendererData.materialsBuffer);
 
     DATA(materialLibrary).dirty = false;
@@ -280,12 +281,11 @@ RenderComponent ev_renderer_registerRenderComponent(const char *meshPath, const 
 {
   RenderComponent newComponent = { 0 };
 
-  Mesh mesh = RendererData.meshLibrary.store[ev_renderer_registerMesh(meshPath)];
-
   //TODO setup mesh index and regester it
 
   newComponent.materialIndex = ev_renderer_getMaterial(materialName);
   newComponent.pipelineIndex = RendererData.materialLibrary.pipelineHandles[newComponent.materialIndex];
+  newComponent.mesh = RendererData.meshLibrary.store[ev_renderer_registerMesh(meshPath)];
 
   return newComponent;
 }
@@ -617,6 +617,7 @@ EV_BINDINGS
   EV_NS_BIND_FN(Renderer, setWindow, setWindow);
   EV_NS_BIND_FN(Renderer, run, run);
   EV_NS_BIND_FN(Renderer, addFrameObjectData, ev_renderer_addFrameObjectData);
+  EV_NS_BIND_FN(Renderer, registerComponent, ev_renderer_registerRenderComponent);
 
   EV_NS_BIND_FN(Material, readJSONList, ev_material_readjsonlist);
 
