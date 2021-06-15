@@ -1,5 +1,6 @@
 #include <Vulkan.h>
 
+#include <Swapchain.h>
 #include <Vulkan_utils.h>
 #include <DescriptorManager.h>
 #include <evol/common/ev_log.h>
@@ -16,6 +17,12 @@ struct ev_Vulkan_Data {
   VmaAllocator     allocator;
 
   VkCommandPool    commandPools[QUEUE_TYPE_COUNT];
+
+  EvSwapchain swapchain;
+  VkRenderPass renderPass;
+  VkFramebuffer framebuffers[SWAPCHAIN_MAX_IMAGES];
+
+  uint32_t currentSwapchainImage;
 } VulkanData;
 
 #define DATA(X) VulkanData.X
@@ -69,6 +76,10 @@ int ev_vulkan_init()
 
 int ev_vulkan_deinit()
 {
+  ev_vulkan_destroyframebuffer();
+  ev_vulkan_destroyrenderpass();
+  ev_swapchain_destroy(&DATA(swapchain));
+
   // Destroy any commandpool that was created earlier
   for(int i = 0; i < QUEUE_TYPE_COUNT; ++i)
     if(VulkanData.commandPools[i])
@@ -139,7 +150,7 @@ void ev_vulkan_createinstance()
   const char *validation_layers[] = {
     "VK_LAYER_KHRONOS_validation",
     "VK_LAYER_LUNARG_monitor",
-    //"VK_LAYER_LUNARG_api_dump",
+    // "VK_LAYER_LUNARG_api_dump",
   };
 
   VkApplicationInfo applicationInfo = {
@@ -217,12 +228,34 @@ void ev_vulkan_createlogicaldevice()
   VulkanQueueManager.retrieveQueues(VulkanData.logicalDevice, deviceQueueCreateInfos, &queueCreateInfoCount);
 }
 
-void ev_vulkan_checksurfacecompatibility(VkSurfaceKHR surface)
+void ev_vulkan_wait()
+{
+  vkWaitForFences(ev_vulkan_getlogicaldevice(), DATA(swapchain).imageCount, DATA(swapchain).frameSubmissionFences, VK_TRUE, ~0ull);
+}
+
+EvSwapchain* ev_vulkan_getSwapchain()
+{
+  return &VulkanData.swapchain;
+}
+
+void ev_vulkan_recreateSwapChain()
+{
+  vkDeviceWaitIdle(ev_vulkan_getlogicaldevice());
+
+  ev_vulkan_destroyframebuffer();
+
+  ev_renderer_updatewindowsize();
+
+  ev_swapchain_create(&DATA(swapchain));
+  ev_vulkan_createframebuffers();
+}
+
+void ev_vulkan_checksurfacecompatibility()
 {
   VkResult res;
 
   VkBool32 surfaceSupported = VK_FALSE;
-  vkGetPhysicalDeviceSurfaceSupportKHR(VulkanData.physicalDevice, VulkanQueueManager.getFamilyIndex(GRAPHICS), surface, &surfaceSupported);
+  vkGetPhysicalDeviceSurfaceSupportKHR(VulkanData.physicalDevice, VulkanQueueManager.getFamilyIndex(GRAPHICS), VulkanData.swapchain.surface, &surfaceSupported);
 
   res = surfaceSupported == VK_FALSE ? !VK_SUCCESS : VK_SUCCESS;
 
@@ -233,6 +266,11 @@ void ev_vulkan_destroysurface(VkSurfaceKHR surface)
 {
   // Destroy the vulkan surface
   vkDestroySurfaceKHR(VulkanData.instance, surface, NULL);
+}
+
+void ev_vulkan_createEvswapchain()
+{
+    ev_swapchain_create(&VulkanData.swapchain);
 }
 
 void ev_vulkan_createswapchain(unsigned int* imageCount, VkExtent2D extent, VkSurfaceKHR* surface, VkSurfaceFormatKHR *surfaceFormat, VkSwapchainKHR oldSwapchain, VkSwapchainKHR* swapchain)
@@ -676,4 +714,300 @@ void ev_vulkan_destroypipeline(VkPipeline pipeline)
 void ev_vulkan_destroypipelinelayout(VkPipelineLayout pipelineLayout)
 {
   vkDestroyPipelineLayout(VulkanData.logicalDevice, pipelineLayout, NULL);
+}
+
+void ev_vulkan_destroyshadermodule(VkShaderModule shaderModule)
+{
+  vkDestroyShaderModule(VulkanData.logicalDevice, shaderModule, NULL);
+}
+
+void ev_vulkan_destroysetlayout(VkDescriptorSetLayout descriptorSetLayout)
+{
+  vkDestroyDescriptorSetLayout(VulkanData.logicalDevice, descriptorSetLayout, NULL);
+}
+
+void ev_vulkan_createrenderpass()
+{
+  VkAttachmentDescription attachmentDescriptions[] =
+  {
+    {
+      .format = DATA(swapchain).surfaceFormat.format,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    },
+    {
+      .format = DATA(swapchain).depthStencilFormat,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+    }
+  };
+
+  VkAttachmentReference colorAttachmentReferences[] =
+  {
+    {
+      .attachment = 0,
+      .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    },
+  };
+
+  VkAttachmentReference depthStencilAttachmentReference =
+  {
+    .attachment = 1,
+    .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+  };
+
+  VkSubpassDescription subpassDescriptions[] =
+  {
+    {
+      .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+      .inputAttachmentCount = 0,
+      .pInputAttachments = NULL,
+      .colorAttachmentCount = ARRAYSIZE(colorAttachmentReferences),
+      .pColorAttachments = colorAttachmentReferences,
+      .pResolveAttachments = NULL,
+      .pDepthStencilAttachment = &depthStencilAttachmentReference,
+      .preserveAttachmentCount = 0,
+      .pPreserveAttachments = NULL,
+    },
+  };
+
+  VkRenderPassCreateInfo renderPassCreateInfo = {
+    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+    .attachmentCount = ARRAYSIZE(attachmentDescriptions),
+    .pAttachments = attachmentDescriptions,
+    .subpassCount = ARRAYSIZE(subpassDescriptions),
+    .pSubpasses = subpassDescriptions,
+    .dependencyCount = 0,
+    .pDependencies = NULL,
+  };
+
+  VK_ASSERT(vkCreateRenderPass(VulkanData.logicalDevice, &renderPassCreateInfo, NULL, &DATA(renderPass)));
+}
+
+void ev_vulkan_createframebuffers()
+{
+  for(size_t i = 0; i < DATA(swapchain).imageCount; ++i)
+  {
+    VkImageView attachments[] =
+    {
+      DATA(swapchain).imageViews[i],
+      DATA(swapchain).depthImageView,
+    };
+
+    ev_vulkan_createframebuffer(attachments, ARRAYSIZE(attachments), VulkanData.renderPass, DATA(swapchain.windowExtent), DATA(framebuffers + i));
+  }
+}
+
+
+void ev_vulkan_destroyframebuffer()
+{
+  for (size_t i = 0; i < DATA(swapchain).imageCount; i++)
+  {
+    vkDestroyFramebuffer(VulkanData.logicalDevice, DATA(framebuffers[i]), NULL);
+  }
+}
+
+void ev_vulkan_destroyrenderpass()
+{
+  vkDestroyRenderPass(VulkanData.logicalDevice, DATA(renderPass), NULL);
+}
+
+VkCommandBuffer ev_vulkan_startframe()
+{
+  VkResult result = vkAcquireNextImageKHR(ev_vulkan_getlogicaldevice(), DATA(swapchain).swapchain, 1000000000, DATA(swapchain).presentSemaphore, NULL, &DATA(currentSwapchainImage));
+  if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+    ev_vulkan_recreateSwapChain();
+    return;
+  } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+    ev_log_debug("failed to acquire swap chain image!");
+  }
+
+  VK_ASSERT(VkResult v = vkWaitForFences(ev_vulkan_getlogicaldevice(), 1, &DATA(swapchain).frameSubmissionFences[DATA(currentSwapchainImage)], true, ~0ull));
+  VK_ASSERT(vkResetFences(ev_vulkan_getlogicaldevice(), 1, &DATA(swapchain).frameSubmissionFences[DATA(currentSwapchainImage)]));
+  //request image from the swapchain, one second timeout
+
+  //now that we are sure tvoid ev_renderer_registerMaterial()hat the commands finished executing, we can safely reset the command buffer to begin recording again.
+  VK_ASSERT(vkResetCommandBuffer(DATA(swapchain).commandBuffers[DATA(currentSwapchainImage)], 0));
+
+  //naming it cmd for shorter writing
+  VkCommandBuffer cmd = DATA(swapchain).commandBuffers[DATA(currentSwapchainImage)];
+
+  //begin the command buffer recording. We will use this command buffer exactly once, so we want to let Vulkan know that
+  VkCommandBufferBeginInfo cmdBeginInfo = {
+    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+    .pNext = NULL,
+
+    .pInheritanceInfo = NULL,
+    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+  };
+  VK_ASSERT(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+
+  VkImageMemoryBarrier imageMemoryBarrier =
+  {
+    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+    .pNext = NULL,
+    .srcAccessMask = 0,
+    .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+    .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
+    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
+    .image = DATA(swapchain).images[DATA(currentSwapchainImage)],
+    .subresourceRange =
+    {
+      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .levelCount = VK_REMAINING_MIP_LEVELS,
+      .layerCount = VK_REMAINING_ARRAY_LAYERS,
+    }
+  };
+
+  vkCmdPipelineBarrier(cmd,
+    VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    VK_DEPENDENCY_BY_REGION_BIT, 0, NULL, 0, NULL, 1, &imageMemoryBarrier);
+
+    VkClearValue clearValues[] =
+    {
+      {
+        .color = { {0.13f, 0.22f, 0.37f, 1.f} },
+      },
+      {
+        .depthStencil = {1.0f, 0.0f},
+      }
+    };
+
+    //start the main renderpass.
+    //We will use the clear color from above, and the framebuffer of the index the swapchain gave us
+    VkRenderPassBeginInfo rpInfo = {
+      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+      .pNext = NULL,
+
+      .renderPass = DATA(renderPass),
+      .renderArea.offset.x = 0,
+      .renderArea.offset.y = 0,
+      .renderArea.extent.width = DATA(swapchain.windowExtent.width),
+      .renderArea.extent.height = DATA(swapchain.windowExtent.height),
+      .framebuffer = DATA(framebuffers[DATA(currentSwapchainImage)]),
+
+      //connect clear values
+      .clearValueCount = ARRAYSIZE(clearValues),
+      .pClearValues = &clearValues,
+    };
+
+    vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    //DO Something
+    {
+      VkRect2D scissor = {
+        .offset = {0, 0},
+        .extent = DATA(swapchain.windowExtent),
+      };
+
+      VkViewport viewport =
+      {
+        .x = 0,
+        .y = DATA(swapchain.windowExtent.height),
+        .width = DATA(swapchain.windowExtent.width),
+        .height = -(float) DATA(swapchain.windowExtent.height),
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+      };
+      vkCmdSetScissor(cmd, 0, 1, &scissor);
+      vkCmdSetViewport(cmd, 0, 1, &viewport);
+    }
+
+    return cmd;
+}
+
+void ev_vulkan_endframe(VkCommandBuffer cmd)
+{
+  vkCmdEndRenderPass(cmd);
+
+  VkImageMemoryBarrier imageMemoryBarrier1 =
+  {
+    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+    .pNext = NULL,
+    .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+    .dstAccessMask = 0,
+    .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
+    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
+    .image = DATA(swapchain).images[DATA(currentSwapchainImage)],
+    .subresourceRange =
+    {
+      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .levelCount = VK_REMAINING_MIP_LEVELS,
+      .layerCount = VK_REMAINING_ARRAY_LAYERS,
+    }
+  };
+
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_DEPENDENCY_BY_REGION_BIT, 0, NULL, 0, NULL, 1, &imageMemoryBarrier1);
+
+
+  //finalize the command buffer (we can no longer add commands, but it can now be executed)
+  VK_ASSERT(vkEndCommandBuffer(cmd));
+
+  //prepare the submission to the queue.
+  //we want to wait on the _presentSemaphore, as that semaphore is signaled when the swapchain is ready
+  //we will signal the _renderSemaphore, to signal that rendering has finished
+
+  VkSubmitInfo submit = {
+    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+    .pNext = NULL,
+  };
+
+  VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+  submit.pWaitDstStageMask = &waitStage;
+
+  submit.waitSemaphoreCount = 1;
+  submit.pWaitSemaphores = &DATA(swapchain).presentSemaphore;
+
+  submit.signalSemaphoreCount = 1;
+  submit.pSignalSemaphores = &DATA(swapchain).submittionSemaphore;
+
+  submit.commandBufferCount = 1;
+  submit.pCommandBuffers = &cmd;
+
+  //submit command buffer to the queue and execute it.
+  // _renderFence will now block until the graphic commands finish execution
+  VK_ASSERT(vkQueueSubmit(VulkanQueueManager.getQueue(GRAPHICS), 1, &submit, DATA(swapchain).frameSubmissionFences[DATA(currentSwapchainImage)]));
+
+  // this will put the image we just rendered into the visible window.
+  // we want to wait on the _renderSemaphore for that,
+  // as it's necessary that drawing commands have finished before the image is displayed to the user
+  VkPresentInfoKHR presentInfo = {
+    .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+    .pNext = NULL,
+
+    .pSwapchains = &DATA(swapchain).swapchain,
+    .swapchainCount = 1,
+
+    .pWaitSemaphores = &DATA(swapchain).submittionSemaphore,
+    .waitSemaphoreCount = 1,
+
+    .pImageIndices = &DATA(currentSwapchainImage),
+  };
+
+  VkResult result = vkQueuePresentKHR(VulkanQueueManager.getQueue(GRAPHICS), &presentInfo);
+  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+    ev_vulkan_recreateSwapChain();
+  } else if (result != VK_SUCCESS) {
+    ev_log_debug("failed to present swap chain image!");
+  }
+}
+
+VkRenderPass ev_vulkan_getrenderpass()
+{
+  return DATA(renderPass);
 }

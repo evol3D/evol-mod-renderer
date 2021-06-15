@@ -1,6 +1,8 @@
 #define EV_MODULE_DEFINE
 #include <evol/evolmod.h>
 
+#include <evjson.h>
+#include <hashmap.h>
 #include <Vulkan.h>
 #include <Pipeline.h>
 #include <Swapchain.h>
@@ -19,9 +21,6 @@
 
 #define DATA(X) RendererData.X
 
-#include <hashmap.h>
-#include <evjson.h>
-
 typedef GenericHandle PipelineHandle;
 #define INVALID_PIPELINE_HANDLE (~0ull)
 
@@ -34,6 +33,16 @@ typedef GenericHandle MeshHandle;
 HashmapDefine(evstring, MaterialHandle, evstring_free, NULL);
 HashmapDefine(evstring, PipelineHandle, evstring_free, NULL);
 HashmapDefine(evstring, MeshHandle, evstring_free, NULL);
+
+typedef struct {
+
+  struct {
+    pthread_mutex_t objectMutex;
+    vec(RenderComponent) objectComponents;
+    vec(Matrix4x4) objectTranforms;
+  };
+
+} FrameData;
 
 typedef struct {
   Map(evstring, MaterialHandle) map;
@@ -54,154 +63,63 @@ typedef struct {
 
 struct ev_Renderer_Data
 {
-  WindowHandle windowHandle;
-  EvSwapchain Swapchain;
-  VkFramebuffer framebuffers[SWAPCHAIN_MAX_IMAGES];
-  VkRenderPass renderPass;
+  FrameData currentFrame;
 
-  DescriptorSet cameraSet;
+  WindowHandle windowHandle;
+
   UBO cameraBuffer;
 
+  DescriptorSet cameraSet;
   DescriptorSet resourcesSet;
 
   MeshLibrary meshLibrary;
   PipelineLibrary pipelineLibrary;
   MaterialLibrary materialLibrary;
 
+  EvBuffer materialsBuffer;
   vec(EvBuffer) vertexBuffers;
   vec(EvBuffer) indexBuffers;
   vec(EvBuffer) customBuffers;
-
-  EvBuffer materialsBuffer;
 } RendererData;
 
 evolmodule_t game_module;
 evolmodule_t asset_module;
 evolmodule_t window_module;
 
-RenderComponent triangleObj;
+void setWindow(WindowHandle handle);
+void ev_renderer_updatewindowsize();
+
+void ev_renderer_createSurface();
+void ev_renderer_destroysurface();
 
 void run();
-void setWindow(WindowHandle handle);
-void recreateSwapChain();
-void ev_renderer_createSurface();
-void ev_renderer_createrenderpass();
-void ev_renderer_updatewindowsize();
-void ev_renderer_createframebuffers();
 
-void ev_renderer_destroyrenderpass();
-void ev_renderer_destroyframebuffer();
-void ev_renderer_destroysurface();
-MeshHandle ev_renderer_registerMesh(CONST_STR meshPath);
 int ev_renderer_registervertexbuffer(void *vertices, unsigned long long size, vec(EvBuffer) vertexBuffers);
+MeshHandle ev_renderer_registerMesh(CONST_STR meshPath);
 RenderComponent ev_renderer_registerRenderComponent(const char *meshPath, const char *materialName);
+
+
 
 void ev_renderer_updatewindowsize()
 {
-  Window->getSize(DATA(windowHandle), &DATA(Swapchain.windowExtent.width), &DATA(Swapchain.windowExtent.height));
+  EvSwapchain *swapchain = ev_vulkan_getSwapchain();
+  Window->getSize(DATA(windowHandle), &swapchain->windowExtent.width, &swapchain->windowExtent.height);
 }
 
 void ev_renderer_createSurface()
 {
-  VK_ASSERT(Window->createVulkanSurface(DATA(windowHandle), ev_vulkan_getinstance(), &DATA(Swapchain.surface)));
-  ev_vulkan_checksurfacecompatibility(DATA(Swapchain.surface));
+  EvSwapchain *swapchain = ev_vulkan_getSwapchain();
+  VK_ASSERT(Window->createVulkanSurface(DATA(windowHandle), ev_vulkan_getinstance(), &swapchain->surface));
+  ev_vulkan_checksurfacecompatibility();
 }
 
-void ev_renderer_createrenderpass()
+void ev_renderer_destroysurface(VkSurfaceKHR surface)
 {
-  VkAttachmentDescription attachmentDescriptions[] =
-  {
-    {
-      .format = DATA(Swapchain).surfaceFormat.format,
-      .samples = VK_SAMPLE_COUNT_1_BIT,
-      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-      .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-      .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-    },
-    {
-      .format = DATA(Swapchain).depthStencilFormat,
-      .samples = VK_SAMPLE_COUNT_1_BIT,
-      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-      .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-    }
-  };
-
-  VkAttachmentReference colorAttachmentReferences[] =
-  {
-    {
-      .attachment = 0,
-      .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-    },
-  };
-
-  VkAttachmentReference depthStencilAttachmentReference =
-  {
-    .attachment = 1,
-    .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-  };
-
-  VkSubpassDescription subpassDescriptions[] =
-  {
-    {
-      .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-      .inputAttachmentCount = 0,
-      .pInputAttachments = NULL,
-      .colorAttachmentCount = ARRAYSIZE(colorAttachmentReferences),
-      .pColorAttachments = colorAttachmentReferences,
-      .pResolveAttachments = NULL,
-      .pDepthStencilAttachment = &depthStencilAttachmentReference,
-      .preserveAttachmentCount = 0,
-      .pPreserveAttachments = NULL,
-    },
-  };
-
-  VkRenderPassCreateInfo renderPassCreateInfo = {
-    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-    .attachmentCount = ARRAYSIZE(attachmentDescriptions),
-    .pAttachments = attachmentDescriptions,
-    .subpassCount = ARRAYSIZE(subpassDescriptions),
-    .pSubpasses = subpassDescriptions,
-    .dependencyCount = 0,
-    .pDependencies = NULL,
-  };
-
-  VK_ASSERT(vkCreateRenderPass(ev_vulkan_getlogicaldevice(), &renderPassCreateInfo, NULL, &DATA(renderPass)));
+  EvSwapchain *swapchain = ev_vulkan_getSwapchain();
+  vkDestroySurfaceKHR(ev_vulkan_getinstance(), surface, NULL);
 }
 
-void ev_renderer_createframebuffers()
-{
-  for(size_t i = 0; i < DATA(Swapchain).imageCount; ++i)
-  {
-    VkImageView attachments[] =
-    {
-      DATA(Swapchain).imageViews[i],
-      DATA(Swapchain).depthImageView,
-    };
-
-    ev_vulkan_createframebuffer(attachments, ARRAYSIZE(attachments), DATA(renderPass), DATA(Swapchain.windowExtent), DATA(framebuffers + i));
-  }
-}
-
-void recreateSwapChain()
-{
-  vkDeviceWaitIdle(ev_vulkan_getlogicaldevice());
-
-  ev_renderer_destroyframebuffer();
-
-  ev_renderer_updatewindowsize();
-
-  ev_swapchain_create(&DATA(Swapchain));
-  ev_renderer_createframebuffers();
-}
-
-void draw(VkCommandBuffer cmd, vec(RenderComponent) components, vec(Matrix4x4) transforms)
+void draw(VkCommandBuffer cmd)
 {
   if (DATA(materialLibrary).dirty)
   {
@@ -225,14 +143,16 @@ void draw(VkCommandBuffer cmd, vec(RenderComponent) components, vec(Matrix4x4) t
 
   ev_vulkan_updateubo(sizeof(CameraData), &cam, &DATA(cameraBuffer));
 
-  for (size_t componentIndex = 0; componentIndex < vec_len(components); componentIndex++)
+  for (size_t componentIndex = 0; componentIndex < vec_len(DATA(currentFrame).objectComponents); componentIndex++)
   {
-    RenderComponent component = components[componentIndex];
+    RenderComponent component = DATA(currentFrame).objectComponents[componentIndex];
     Pipeline pipeline = DATA(pipelineLibrary.store[component.pipelineIndex]);
 
     MeshPushConstants pushconstant;
-    //pushconstant.transform = transforms[componentIndex];
-    pushconstant.meshIndex = component.meshIndex;
+    memcpy(pushconstant.transform, DATA(currentFrame).objectTranforms[componentIndex], sizeof(Matrix4x4));
+    pushconstant.indexBufferIndex = component.mesh.indexBufferIndex;
+    pushconstant.vertexBufferIndex = component.mesh.indexBufferIndex;
+    pushconstant.materialIndex = component.materialIndex;
 
     vkCmdPushConstants(cmd, pipeline.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &pushconstant);
 
@@ -252,229 +172,27 @@ void draw(VkCommandBuffer cmd, vec(RenderComponent) components, vec(Matrix4x4) t
   }
 }
 
+void ev_renderer_addFrameObjectData(RenderComponent *components, Matrix4x4 *transforms, uint32_t count)
+{
+  pthread_mutex_lock(&DATA(currentFrame).objectMutex);
+
+  vec_append(&DATA(currentFrame).objectComponents, &components, count);
+
+  vec_append(&DATA(currentFrame).objectTranforms, &transforms, count);
+
+  pthread_mutex_unlock(&DATA(currentFrame).objectMutex);
+}
+
 void run()
 {
-  uint32_t swapchainImageIndex = 0;
-  VkResult result = vkAcquireNextImageKHR(ev_vulkan_getlogicaldevice(), DATA(Swapchain).swapchain, 1000000000, DATA(Swapchain).presentSemaphore, NULL, &swapchainImageIndex);
-  if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-    recreateSwapChain();
-    return;
-  } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-    ev_log_debug("failed to acquire swap chain image!");
-  }
+  VkCommandBuffer cmd = ev_vulkan_startframe();
 
-  VK_ASSERT(VkResult v = vkWaitForFences(ev_vulkan_getlogicaldevice(), 1, &DATA(Swapchain).frameSubmissionFences[swapchainImageIndex], true, ~0ull));
-  VK_ASSERT(vkResetFences(ev_vulkan_getlogicaldevice(), 1, &DATA(Swapchain).frameSubmissionFences[swapchainImageIndex]));
-  //request image from the swapchain, one second timeout
+  draw(cmd);
 
+  ev_vulkan_endframe(cmd);
 
-  //now that we are sure tvoid ev_renderer_registerMaterial()hat the commands finished executing, we can safely reset the command buffer to begin recording again.
-  VK_ASSERT(vkResetCommandBuffer(DATA(Swapchain).commandBuffers[swapchainImageIndex], 0));
-
-  //naming it cmd for shorter writing
-	VkCommandBuffer cmd = DATA(Swapchain).commandBuffers[swapchainImageIndex];
-
-	//begin the command buffer recording. We will use this command buffer exactly once, so we want to let Vulkan know that
-	VkCommandBufferBeginInfo cmdBeginInfo = {
-	.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-	.pNext = NULL,
-
-	.pInheritanceInfo = NULL,
-	.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-  };
-	VK_ASSERT(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
-
-  VkImageMemoryBarrier imageMemoryBarrier =
-  {
-    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-    .pNext = NULL,
-    .srcAccessMask = 0,
-    .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-    .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-    .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
-    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
-    .image = DATA(Swapchain).images[swapchainImageIndex],
-    .subresourceRange =
-    {
-      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-      .levelCount = VK_REMAINING_MIP_LEVELS,
-      .layerCount = VK_REMAINING_ARRAY_LAYERS,
-    }
-  };
-
-  vkCmdPipelineBarrier(cmd,
-      VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-      VK_DEPENDENCY_BY_REGION_BIT, 0, NULL, 0, NULL, 1, &imageMemoryBarrier);
-
-  VkClearValue clearValues[] =
-  {
-    {
-      .color = { {0.13f, 0.22f, 0.37f, 1.f} },
-    },
-    {
-      .depthStencil = {1.0f, 0.0f},
-    }
-  };
-
-	//start the main renderpass.
-	//We will use the clear color from above, and the framebuffer of the index the swapchain gave us
-	VkRenderPassBeginInfo rpInfo = {
-  	.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-  	.pNext = NULL,
-
-  	.renderPass = DATA(renderPass),
-  	.renderArea.offset.x = 0,
-  	.renderArea.offset.y = 0,
-  	.renderArea.extent.width = DATA(Swapchain.windowExtent.width),
-    .renderArea.extent.height = DATA(Swapchain.windowExtent.height),
-  	.framebuffer = DATA(framebuffers[swapchainImageIndex]),
-
-  	//connect clear values
-  	.clearValueCount = ARRAYSIZE(clearValues),
-  	.pClearValues = &clearValues,
-  };
-
-	vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-  //DO Something
-  {
-    VkRect2D scissor = {
-      .offset = {0, 0},
-      .extent = DATA(Swapchain.windowExtent),
-    };
-
-    VkViewport viewport =
-    {
-      .x = 0,
-      .y = DATA(Swapchain.windowExtent.height),
-      .width = DATA(Swapchain.windowExtent.width),
-      .height = -(float) DATA(Swapchain.windowExtent.height),
-      .minDepth = 0.0f,
-      .maxDepth = 1.0f,
-    };
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
-  }
-
-  vec(Matrix4x4) transforms = vec_init(Matrix4x4);
-  vec_setlen(&transforms, 1);
-  GameObject player = Scene->getObject(NULL, "Player");
-
-  memcpy(transforms[0], *Object->getWorldTransform(NULL, player), sizeof(Matrix4x4));
-
-  vec(RenderComponent) components = vec_init(RenderComponent);
-  vec_setlen(&components, 1);
-  components[0] =  ev_renderer_registerRenderComponent("project://Map.mesh", "WhiteMaterial");
-
-  draw(cmd, components, transforms);
-
-
-	vkCmdEndRenderPass(cmd);
-
-  VkImageMemoryBarrier imageMemoryBarrier1 =
-  {
-    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-    .pNext = NULL,
-    .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-    .dstAccessMask = 0,
-    .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-    .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
-    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
-    .image = DATA(Swapchain).images[swapchainImageIndex],
-    .subresourceRange =
-    {
-      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-      .levelCount = VK_REMAINING_MIP_LEVELS,
-      .layerCount = VK_REMAINING_ARRAY_LAYERS,
-    }
-  };
-
-  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_DEPENDENCY_BY_REGION_BIT, 0, NULL, 0, NULL, 1, &imageMemoryBarrier1);
-
-
-  //finalize the command buffer (we can no longer add commands, but it can now be executed)
-	VK_ASSERT(vkEndCommandBuffer(cmd));
-
-  //prepare the submission to the queue.
-	//we want to wait on the _presentSemaphore, as that semaphore is signaled when the swapchain is ready
-	//we will signal the _renderSemaphore, to signal that rendering has finished
-
-	VkSubmitInfo submit = {
-  	.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-  	.pNext = NULL,
-  };
-
-	VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-
-	submit.pWaitDstStageMask = &waitStage;
-
-	submit.waitSemaphoreCount = 1;
-	submit.pWaitSemaphores = &DATA(Swapchain).presentSemaphore;
-
-	submit.signalSemaphoreCount = 1;
-	submit.pSignalSemaphores = &DATA(Swapchain).submittionSemaphore;
-
-	submit.commandBufferCount = 1;
-	submit.pCommandBuffers = &cmd;
-
-	//submit command buffer to the queue and execute it.
-	// _renderFence will now block until the graphic commands finish execution
-	VK_ASSERT(vkQueueSubmit(VulkanQueueManager.getQueue(GRAPHICS), 1, &submit, DATA(Swapchain).frameSubmissionFences[swapchainImageIndex]));
-
-  // this will put the image we just rendered into the visible window.
-	// we want to wait on the _renderSemaphore for that,
-	// as it's necessary that drawing commands have finished before the image is displayed to the user
-	VkPresentInfoKHR presentInfo = {
-  	.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-  	.pNext = NULL,
-
-  	.pSwapchains = &DATA(Swapchain).swapchain,
-  	.swapchainCount = 1,
-
-  	.pWaitSemaphores = &DATA(Swapchain).submittionSemaphore,
-  	.waitSemaphoreCount = 1,
-
-  	.pImageIndices = &swapchainImageIndex,
-  };
-
-	result = vkQueuePresentKHR(VulkanQueueManager.getQueue(GRAPHICS), &presentInfo);
-  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-    recreateSwapChain();
-  } else if (result != VK_SUCCESS) {
-      ev_log_debug("failed to present swap chain image!");
-  }
+  FrameData_clear(&DATA(currentFrame));
 }
-
-void ev_renderer_destroysurface()
-{
-  vkDestroySurfaceKHR(ev_vulkan_getinstance(), DATA(Swapchain.surface), NULL);
-}
-void ev_renderer_destroyframebuffer()
-{
-  for (size_t i = 0; i < DATA(Swapchain).imageCount; i++)
-  {
-    vkDestroyFramebuffer(ev_vulkan_getlogicaldevice(), DATA(framebuffers[i]), NULL);
-  }
-}
-
-void ev_renderer_destroyrenderpass()
-{
-  vkDestroyRenderPass(ev_vulkan_getlogicaldevice(), DATA(renderPass), NULL);
-}
-
-
-
-
-
-
-
-
-
-
-
-
 
 MaterialHandle ev_renderer_getMaterial(const char *materialName)
 {
@@ -508,37 +226,6 @@ MaterialHandle ev_renderer_registerMaterial(const char *materialName, Material m
   return new_handle;
 }
 
-void destroyPipeline(Pipeline *pipeline)
-{
-  ev_vulkan_destroypipeline(pipeline->pipeline);
-  ev_vulkan_destroypipelinelayout(pipeline->pipelineLayout);
-
-  for (size_t i = 0; i < vec_len(pipeline->pSets); i++)
-  {
-    vkDestroyDescriptorSetLayout(ev_vulkan_getlogicaldevice(), pipeline->pSets[i].layout, NULL);
-  }
-}
-
-RenderComponent ev_renderer_registerRenderComponent(const char *meshPath, const char *materialName)
-{
-  RenderComponent newComponent = { 0 };
-
-  Mesh mesh = RendererData.meshLibrary.store[ev_renderer_registerMesh(meshPath)];
-
-  ShaderMesh m = {
-    .indexBufferIndex =  mesh.indexBufferIndex,
-    .vertexBufferIndex = mesh.vertexBufferIndex,
-  };
-  //TODO setup mesh index and regester it
-
-
-  newComponent.materialIndex = ev_renderer_getMaterial(materialName);
-  newComponent.pipelineIndex = RendererData.materialLibrary.pipelineHandles[newComponent.materialIndex];
-  newComponent.meshIndex = 0;
-
-  return newComponent;
-}
-
 PipelineHandle ev_renderer_getPipeline(CONST_STR pipelineName)
 {
   PipelineHandle *handle = Hashmap(evstring, PipelineHandle).get(DATA(pipelineLibrary).map, pipelineName);
@@ -564,18 +251,43 @@ PipelineHandle ev_renderer_registerPipeline(CONST_STR pipelineName, vec(Shader) 
   EvGraphicsPipelineCreateInfo pipelineCreateInfo = {
     .stageCount = vec_len(*shaders),
     .pShaders = *shaders,
-    .renderPass = DATA(renderPass),
+    .renderPass = ev_vulkan_getrenderpass(),
   };
 
   ev_pipeline_build(pipelineCreateInfo, &newPipeline);
 
   for (size_t i = 0; i < vec_len(newPipeline.pSets); i++)
-    ev_descriptormanager_allocate(newPipeline.pSets[i].layout, &newPipeline.pSets[i].set);
+  ev_descriptormanager_allocate(newPipeline.pSets[i].layout, &newPipeline.pSets[i].set);
 
   PipelineHandle new_handle = (PipelineHandle)vec_push(&RendererData.pipelineLibrary.store, &newPipeline);
   Hashmap(evstring, MaterialHandle).push(DATA(pipelineLibrary).map, evstring_new(pipelineName), new_handle);
 
   return new_handle;
+}
+
+void destroyPipeline(Pipeline *pipeline)
+{
+  ev_vulkan_destroypipeline(pipeline->pipeline);
+  ev_vulkan_destroypipelinelayout(pipeline->pipelineLayout);
+
+  for (size_t i = 0; i < vec_len(pipeline->pSets); i++)
+  {
+    ev_vulkan_destroysetlayout(pipeline->pSets[i].layout);
+  }
+}
+
+RenderComponent ev_renderer_registerRenderComponent(const char *meshPath, const char *materialName)
+{
+  RenderComponent newComponent = { 0 };
+
+  Mesh mesh = RendererData.meshLibrary.store[ev_renderer_registerMesh(meshPath)];
+
+  //TODO setup mesh index and regester it
+
+  newComponent.materialIndex = ev_renderer_getMaterial(materialName);
+  newComponent.pipelineIndex = RendererData.materialLibrary.pipelineHandles[newComponent.materialIndex];
+
+  return newComponent;
 }
 
 MeshHandle ev_renderer_registerMesh(CONST_STR meshPath)
@@ -732,13 +444,12 @@ void ev_graphicspipeline_readjsonlist(evjson_t *json_context, const char *list_n
 void setWindow(WindowHandle handle)
 {
   DATA(windowHandle) = handle;
-
   ev_renderer_updatewindowsize();
 
   ev_renderer_createSurface();
-  ev_swapchain_create(&DATA(Swapchain));
-  ev_renderer_createrenderpass();
-  ev_renderer_createframebuffers();
+  ev_vulkan_createEvswapchain();
+  ev_vulkan_createrenderpass();
+  ev_vulkan_createframebuffers();
 }
 
 void ev_renderer_globalsetsinit()
@@ -817,6 +528,101 @@ void ev_renderer_globalsetsinit()
   ev_descriptormanager_allocate(DATA(resourcesSet).layout, &DATA(resourcesSet).set);
 }
 
+void FrameData_init(FrameData *frame)
+{
+  frame->objectComponents = vec_init(RenderComponent);
+
+  frame->objectTranforms = vec_init(Matrix4x4);
+
+  pthread_mutex_init(&frame->objectMutex, NULL);
+}
+
+void FrameData_fini(FrameData *frame)
+{
+  vec_fini(frame->objectComponents);
+
+  vec_fini(frame->objectTranforms);
+
+  pthread_mutex_destroy(&frame->objectMutex);
+}
+
+void FrameData_clear(FrameData *frame)
+{
+  vec_clear(frame->objectComponents);
+
+  vec_clear(frame->objectTranforms);
+}
+
+void ev_renderer_globalsetsdinit()
+{
+  //cameraSet
+  ev_vulkan_freeubo(&DATA(cameraBuffer));
+  ev_vulkan_destroysetlayout(RendererData.cameraSet.layout);
+
+  //Resources set
+  ev_vulkan_destroybuffer(&RendererData.materialsBuffer);
+  ev_vulkan_destroysetlayout(RendererData.resourcesSet.layout);
+}
+
+EV_CONSTRUCTOR
+{
+  game_module = evol_loadmodule_weak("game");        DEBUG_ASSERT(game_module);
+  imports(game_module  , (Game, Camera, Object, Scene));
+
+  asset_module = evol_loadmodule("assetmanager"); DEBUG_ASSERT(asset_module);
+  imports(asset_module  , (AssetManager, Asset, MeshLoader, ShaderLoader));
+
+  window_module  = evol_loadmodule("window");     DEBUG_ASSERT(window_module);
+  imports(window_module, (Window));
+
+  FrameData_init(&DATA(currentFrame));
+
+  RendererData.vertexBuffers = vec_init(EvBuffer, NULL, ev_vulkan_destroybuffer);
+  RendererData.indexBuffers  = vec_init(EvBuffer, NULL, ev_vulkan_destroybuffer);
+  RendererData.customBuffers = vec_init(EvBuffer, NULL, ev_vulkan_destroybuffer);
+
+  ev_vulkan_init();
+
+  ev_renderer_globalsetsinit();
+
+  materialLibraryInit(&DATA(materialLibrary));
+  pipelineLibraryInit(&DATA(pipelineLibrary));
+  meshLibraryInit(&DATA(meshLibrary));
+}
+
+EV_DESTRUCTOR
+{
+  ev_vulkan_wait();
+
+  vec_fini(DATA(customBuffers));
+  vec_fini(DATA(vertexBuffers));
+  vec_fini(DATA(indexBuffers));
+
+  meshLibraryDestroy(DATA(meshLibrary));
+  materialLibraryDestroy(DATA(materialLibrary));
+  pipelineLibraryDestroy(DATA(pipelineLibrary));
+
+  ev_renderer_globalsetsdinit();
+
+  ev_vulkan_deinit();
+
+  FrameData_fini(&DATA(currentFrame));
+
+  evol_unloadmodule(window_module);
+  evol_unloadmodule(asset_module);
+}
+
+EV_BINDINGS
+{
+  EV_NS_BIND_FN(Renderer, setWindow, setWindow);
+  EV_NS_BIND_FN(Renderer, run, run);
+  EV_NS_BIND_FN(Renderer, addFrameObjectData, ev_renderer_addFrameObjectData);
+
+  EV_NS_BIND_FN(Material, readJSONList, ev_material_readjsonlist);
+
+  EV_NS_BIND_FN(GraphicsPipeline, readJSONList, ev_graphicspipeline_readjsonlist);
+}
+
 void materialLibraryInit(MaterialLibrary *library)
 {
   library->map = Hashmap(evstring, MaterialHandle).new();
@@ -854,63 +660,4 @@ void meshLibraryDestroy(MeshLibrary library)
 {
   Hashmap(evstring, MeshHandle).free(library.map);
   vec_fini(library.store);
-}
-
-EV_CONSTRUCTOR
-{
-  game_module = evol_loadmodule_weak("game");        DEBUG_ASSERT(game_module);
-  imports(game_module  , (Game, Camera, Object, Scene));
-
-  asset_module = evol_loadmodule("assetmanager"); DEBUG_ASSERT(asset_module);
-  imports(asset_module  , (AssetManager, Asset, MeshLoader, ShaderLoader));
-
-  window_module  = evol_loadmodule("window");     DEBUG_ASSERT(window_module);
-  imports(window_module, (Window));
-
-  RendererData.vertexBuffers = vec_init(EvBuffer, NULL, ev_vulkan_destroybuffer);
-  RendererData.indexBuffers  = vec_init(EvBuffer, NULL, ev_vulkan_destroybuffer);
-  RendererData.customBuffers = vec_init(EvBuffer, NULL, ev_vulkan_destroybuffer);
-
-  ev_vulkan_init();
-
-  ev_renderer_globalsetsinit();
-
-  materialLibraryInit(&DATA(materialLibrary));
-  pipelineLibraryInit(&DATA(pipelineLibrary));
-  meshLibraryInit(&DATA(meshLibrary));
-}
-
-EV_DESTRUCTOR
-{
-  vkWaitForFences(ev_vulkan_getlogicaldevice(), DATA(Swapchain).imageCount, DATA(Swapchain).frameSubmissionFences, VK_TRUE, ~0ull);
-
-  ev_vulkan_freeubo(&DATA(cameraBuffer));
-
-  vec_fini(DATA(customBuffers));
-  vec_fini(DATA(vertexBuffers));
-  vec_fini(DATA(indexBuffers));
-
-  ev_renderer_destroyframebuffer();
-  ev_renderer_destroyrenderpass();
-  ev_swapchain_destroy(&DATA(Swapchain));
-  ev_renderer_destroysurface();
-
-  meshLibraryDestroy(DATA(meshLibrary));
-  materialLibraryDestroy(DATA(materialLibrary));
-  pipelineLibraryDestroy(DATA(pipelineLibrary));
-
-  ev_vulkan_deinit();
-
-  evol_unloadmodule(window_module);
-  evol_unloadmodule(asset_module);
-}
-
-EV_BINDINGS
-{
-  EV_NS_BIND_FN(Renderer, setWindow, setWindow);
-  EV_NS_BIND_FN(Renderer, run, run);
-
-  EV_NS_BIND_FN(Material, readJSONList, ev_material_readjsonlist);
-
-  EV_NS_BIND_FN(GraphicsPipeline, readJSONList, ev_graphicspipeline_readjsonlist);
 }

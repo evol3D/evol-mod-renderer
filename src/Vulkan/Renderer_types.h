@@ -3,6 +3,7 @@
 #include <volk.h>
 #include <vk_mem_alloc.h>
 #include <evol/evol.h>
+#include <evol/threads/evolpthreads.h>
 
 typedef enum {
     VERTEXRESOURCE,
@@ -18,12 +19,36 @@ typedef struct
   VmaAllocationInfo allocationInfo;
 } EvImage;
 
+#define SWAPCHAIN_MAX_IMAGES 5
+
 typedef struct
 {
   VkBuffer buffer;
   VmaAllocation allocation;
   VmaAllocationInfo allocationInfo;
 } EvBuffer;
+
+typedef struct {
+  VkSurfaceKHR surface;
+  VkExtent2D windowExtent;
+
+  uint32_t imageCount;
+  VkSwapchainKHR swapchain;
+  VkSurfaceFormatKHR surfaceFormat;
+
+  EvImage depthImage;
+  VkImageView depthImageView;
+  VkFormat depthStencilFormat;
+  VkDeviceMemory depthImageMemory;
+
+  VkImage images[SWAPCHAIN_MAX_IMAGES];
+  VkImageView imageViews[SWAPCHAIN_MAX_IMAGES];
+  VkCommandBuffer commandBuffers[SWAPCHAIN_MAX_IMAGES];
+
+  VkSemaphore presentSemaphore;
+  VkSemaphore submittionSemaphore;
+  VkFence frameSubmissionFences[SWAPCHAIN_MAX_IMAGES];
+} EvSwapchain;
 
 typedef struct
 {
@@ -46,7 +71,9 @@ typedef struct {
 
 typedef struct {
   Matrix4x4 transform;
-  uint32_t meshIndex
+  uint32_t indexBufferIndex;
+  uint32_t vertexBufferIndex;
+  uint32_t materialIndex;
 } MeshPushConstants;
 
 typedef struct {
@@ -77,27 +104,5 @@ typedef struct {
 } Pipeline;
 
 typedef struct {
-  uint32_t indexBufferIndex;
-  uint32_t vertexBufferIndex;
-  uint32_t materialIndex;
-} ShaderMesh;
-
-typedef struct {
-  uint32_t indexCount;
-  uint32_t indexBufferIndex;
-
-	uint32_t vertexCount;
-  uint32_t vertexBufferIndex;
-} Mesh;
-
-typedef struct {
   Vec4 baseColor;
 } Material;
-
-typedef struct {
-  uint32_t materialIndex;
-  uint32_t pipelineIndex;
-  uint32_t meshIndex;
-
-  Mesh mesh;
-} RenderComponent;

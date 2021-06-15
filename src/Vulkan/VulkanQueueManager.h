@@ -1,5 +1,4 @@
-#ifndef EVOL_VULKANQUEUEMANAGER_H
-#define EVOL_VULKANQUEUEMANAGER_H
+#pragma once
 
 #include <volk.h>
 
@@ -20,5 +19,3 @@ extern struct ev_VulkanQueueManager {
     void         (*retrieveQueues)(VkDevice logicalDevice, VkDeviceQueueCreateInfo* queueCreateInfos, unsigned int *queueCreateInfosCount);
     unsigned int (*getFamilyIndex)(QueueType type);
 } VulkanQueueManager;
-
-#endif

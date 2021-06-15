@@ -199,9 +199,7 @@ void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, Pipeline *mate
   {
     if (evCreateInfo.stageCount == 0) return;
     if (evCreateInfo.renderPass == NULL) return;
-
   }
-
 
   for (size_t stgIndex = 0; stgIndex < evCreateInfo.stageCount; stgIndex++)
   {
@@ -315,4 +313,7 @@ void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, Pipeline *mate
       &graphicsPipelinesCreateInfo, NULL,
       &material->pipeline)
     );
+
+  for (size_t i = 0; i < ARRAYSIZE(shaderModules); i++)
+    ev_vulkan_destroyshadermodule(shaderModules[i]);
 }
