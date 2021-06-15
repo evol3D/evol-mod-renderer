@@ -832,7 +832,7 @@ VkCommandBuffer ev_vulkan_startframe()
     ev_log_debug("failed to acquire swap chain image!");
   }
 
-  VK_ASSERT(VkResult v = vkWaitForFences(ev_vulkan_getlogicaldevice(), 1, &DATA(swapchain).frameSubmissionFences[DATA(currentSwapchainImage)], true, ~0ull));
+  VK_ASSERT(vkWaitForFences(ev_vulkan_getlogicaldevice(), 1, &DATA(swapchain).frameSubmissionFences[DATA(currentSwapchainImage)], true, ~0ull));
   VK_ASSERT(vkResetFences(ev_vulkan_getlogicaldevice(), 1, &DATA(swapchain).frameSubmissionFences[DATA(currentSwapchainImage)]));
   //request image from the swapchain, one second timeout
 
