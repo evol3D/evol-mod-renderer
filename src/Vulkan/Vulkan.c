@@ -5,7 +5,8 @@
 #include <DescriptorManager.h>
 #include <evol/common/ev_log.h>
 
-#define EV_USAGEFLAGS_RESOURCE_BUFFER VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+#define EV_USAGEFLAGS_RESOURCE_BUFFER   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+# define EV_USAGEFLAGS_RESOURCE_IMAGE   VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
 
 struct ev_Vulkan_Data {
   VkInstance       instance;
@@ -13,7 +14,8 @@ struct ev_Vulkan_Data {
   VkDevice         logicalDevice;
   VkPhysicalDevice physicalDevice;
 
-  VmaPool storagePool;
+  VmaPool buffersPool;
+  VmaPool imagesPool;
   VmaAllocator     allocator;
 
   VkCommandPool    commandPools[QUEUE_TYPE_COUNT];
@@ -67,7 +69,8 @@ int ev_vulkan_init()
   ev_vulkan_initvma();
   ev_log_debug("Initialized VMA");
 
-  ev_vulkan_createresourcememorypool(128ull * 1024 * 1024, 1, 4, &DATA(storagePool));
+  ev_vulkan_createresourcememorypool(EV_USAGEFLAGS_RESOURCE_BUFFER ,128ull * 1024 * 1024, 1, 4, &DATA(buffersPool));
+  ev_vulkan_createresourcememorypool(EV_USAGEFLAGS_RESOURCE_IMAGE ,512ull * 1024 * 1024, 1, 4, &DATA(imagesPool));
 
   ev_descriptormanager_init();
 
@@ -88,7 +91,8 @@ int ev_vulkan_deinit()
   ev_descriptormanager_dinit();
 
   // Destroy VMA
-  ev_vulkan_freememorypool(DATA(storagePool));
+  ev_vulkan_freememorypool(DATA(imagesPool));
+  ev_vulkan_freememorypool(DATA(buffersPool));
   vmaDestroyAllocator(VulkanData.allocator);
 
   // Destroy the logical device
@@ -149,7 +153,7 @@ void ev_vulkan_createinstance()
 
   const char *validation_layers[] = {
     "VK_LAYER_KHRONOS_validation",
-    "VK_LAYER_LUNARG_monitor",
+    //"VK_LAYER_LUNARG_monitor",
     // "VK_LAYER_LUNARG_api_dump",
   };
 
@@ -321,7 +325,7 @@ void ev_vulkan_createswapchain(unsigned int* imageCount, VkExtent2D extent, VkSu
     .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
     .preTransform     = surfaceCapabilities.currentTransform,
     .compositeAlpha   = compositeAlpha,
-    .presentMode      = VK_PRESENT_MODE_FIFO_KHR, // TODO: Make sure that this is always supported
+    .presentMode      = VK_PRESENT_MODE_MAILBOX_KHR, // TODO: Make sure that this is always supported
     .clipped          = VK_TRUE,
     .oldSwapchain     = VK_NULL_HANDLE,
   };
@@ -429,9 +433,9 @@ void ev_vulkan_createimageview(VkFormat imageFormat, VkImage *image, VkImageView
     vkCreateImageView(VulkanData.logicalDevice, &imageViewCreateInfo, NULL, view);
 }
 
-void ev_vulkan_destroyimage(EvImage *image)
+void ev_vulkan_destroyimage(EvImage image)
 {
-  vmaDestroyImage(VulkanData.allocator, image->image, image->allocation);
+  vmaDestroyImage(VulkanData.allocator, image.image, image.allocation);
 }
 
 void ev_vulkan_createbuffer(VkBufferCreateInfo *bufferCreateInfo, VmaAllocationCreateInfo *allocationCreateInfo, EvBuffer *buffer)
@@ -503,7 +507,6 @@ void ev_vulkan_destroyimageview(VkImageView imageView)
 void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, void *data)
 {
   VkWriteDescriptorSet setWrite;
-
   switch(binding->type)
   {
     case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
@@ -529,30 +532,30 @@ void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, void *data)
       }
     case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
     case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-      break;
-
     case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
     case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
     case VK_DESCRIPTOR_TYPE_SAMPLER:
     case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+      {
+        EvTexture texture = *(EvTexture*)data;
+        VkDescriptorImageInfo imageinfo = {
+          .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+          .imageView   = texture.imageView,
+          .sampler     = texture.sampler,
+        };
+        setWrite = (VkWriteDescriptorSet)
+        {
+          .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+          .descriptorCount = 1,
+          .descriptorType = binding->type,
+          .dstSet = set.set,
+          .dstBinding = binding->binding,
+          .dstArrayElement = binding->writtenSetsCount,
+          .pImageInfo = &imageinfo,
+        };
+        break;
+      }
     case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
-        // d.imageInfo = (VkDescriptorImageInfo){
-        //   .imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        //   .imageInfo.imageView = ((EvTexture*)data)->imageView,
-        //   .imageInfo.sampler = ((EvTexture*)descriptors[i].descriptorData)->sampler,
-        // }
-        //
-        // setWrites[i] = (VkWriteDescriptorSet)
-        // {
-        //   .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        //   .dstSet = descriptorSet,
-        //   .dstBinding = 0,
-        //   .dstArrayElement = i,
-        //   .descriptorType = (VkDescriptorType)descriptors[i].type,
-        //   .descriptorCount = 1,
-        //   .pImageInfo = &imageInfos[i]
-        // };
-        // break;
     default:
       ;
   }
@@ -665,14 +668,14 @@ void ev_vulkan_allocatestagingbuffer(unsigned long long bufferSize, EvBuffer *bu
   ev_vulkan_createbuffer(&bufferCreateInfo, &allocationCreateInfo, buffer);
 }
 
-void ev_vulkan_createresourcememorypool(unsigned long long blockSize, unsigned int minBlockCount, unsigned int maxBlockCount, VmaPool *pool)
+void ev_vulkan_createresourcememorypool(VkBufferUsageFlagBits memoryFlags ,unsigned long long blockSize, unsigned int minBlockCount, unsigned int maxBlockCount, VmaPool *pool)
 {
   unsigned int memoryType;
 
   { // Detecting memorytype index
     VkBufferCreateInfo sampleBufferCreateInfo = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     sampleBufferCreateInfo.size = 1024;
-    sampleBufferCreateInfo.usage = EV_USAGEFLAGS_RESOURCE_BUFFER;
+    sampleBufferCreateInfo.usage = memoryFlags;
 
     VmaAllocationCreateInfo allocationCreateInfo = {
 		.usage = VMA_MEMORY_USAGE_GPU_ONLY,
@@ -694,7 +697,7 @@ void ev_vulkan_createresourcememorypool(unsigned long long blockSize, unsigned i
 EvBuffer ev_vulkan_registerbuffer(void *data, unsigned long long size)
 {
   EvBuffer newBuffer;
-  ev_vulkan_allocatebufferinpool(DATA(storagePool), size, EV_USAGEFLAGS_RESOURCE_BUFFER, &newBuffer);
+  ev_vulkan_allocatebufferinpool(DATA(buffersPool), size, EV_USAGEFLAGS_RESOURCE_BUFFER, &newBuffer);
 
   EvBuffer newStagingBuffer;
   ev_vulkan_allocatestagingbuffer(size, &newStagingBuffer);
@@ -807,7 +810,6 @@ void ev_vulkan_createframebuffers()
     ev_vulkan_createframebuffer(attachments, ARRAYSIZE(attachments), VulkanData.renderPass, DATA(swapchain.windowExtent), DATA(framebuffers + i));
   }
 }
-
 
 void ev_vulkan_destroyframebuffer()
 {
@@ -1010,4 +1012,217 @@ void ev_vulkan_endframe(VkCommandBuffer cmd)
 VkRenderPass ev_vulkan_getrenderpass()
 {
   return DATA(renderPass);
+}
+
+void ev_vulkan_allocateimageinpool(VmaPool pool, uint32_t width, uint32_t height, unsigned long long usageFlags, EvImage *image)
+{
+    VkImageCreateInfo imageCreateInfo = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .extent.width = width,
+        .extent.height = height,
+        .extent.depth = 1,
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .format = VK_FORMAT_R8G8B8A8_SRGB,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .usage = usageFlags,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+      };
+
+  VmaAllocationCreateInfo allocationCreateInfo = {
+    .pool = pool,
+  };
+
+  ev_vulkan_createimage(&imageCreateInfo, &allocationCreateInfo, image);
+}
+
+void ev_vulkan_transitionimagelayout(EvImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
+{
+  VkCommandBuffer tempCommandBuffer;
+  ev_vulkan_allocateprimarycommandbuffer(TRANSFER, &tempCommandBuffer);
+  VkCommandBufferBeginInfo tempCommandBufferBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+  tempCommandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+  vkBeginCommandBuffer(tempCommandBuffer, &tempCommandBufferBeginInfo);
+
+
+  VkImageMemoryBarrier barrier = {
+    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+    .oldLayout = oldLayout,
+    .newLayout = newLayout,
+    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+    .image = image.image,
+
+    .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+    .subresourceRange.baseMipLevel = 0,
+    .subresourceRange.levelCount = 1,
+    .subresourceRange.baseArrayLayer = 0,
+    .subresourceRange.layerCount = 1,
+  };
+
+  VkPipelineStageFlags sourceStage = 0;
+  VkPipelineStageFlags destinationStage = 0;
+
+  if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+      barrier.srcAccessMask = 0;
+      barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+      sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+      destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+  } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+      barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+      barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+      sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+      destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+  }
+
+  vkCmdPipelineBarrier(
+      tempCommandBuffer,
+      sourceStage, destinationStage,
+      0,
+      0, NULL,
+      0, NULL,
+      1, &barrier
+  );
+
+
+  vkEndCommandBuffer(tempCommandBuffer);
+
+  VkPipelineStageFlags stageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+
+  VkSubmitInfo submitInfo         = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+  submitInfo.pWaitDstStageMask    = &stageMask;
+  submitInfo.commandBufferCount   = 1;
+  submitInfo.pCommandBuffers      = &tempCommandBuffer;
+  submitInfo.waitSemaphoreCount   = 0;
+  submitInfo.pWaitSemaphores      = NULL;
+  submitInfo.signalSemaphoreCount = 0;
+  submitInfo.pSignalSemaphores    = NULL;
+
+  VkQueue transferQueue = VulkanQueueManager.getQueue(TRANSFER);
+  VK_ASSERT(vkQueueSubmit(transferQueue, 1, &submitInfo, VK_NULL_HANDLE));
+
+  //TODO Change this to take advantage of fences
+  vkQueueWaitIdle(transferQueue);
+
+  //vkFreeCommandBuffers(VulkanData.logicalDevice, DATA(transferCommandPool), 1, &tempCommandBuffer);
+}
+
+void ev_vulkan_copybuffertoimage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
+{
+  VkCommandBuffer tempCommandBuffer;
+  ev_vulkan_allocateprimarycommandbuffer(TRANSFER, &tempCommandBuffer);
+  VkCommandBufferBeginInfo tempCommandBufferBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+  tempCommandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+  vkBeginCommandBuffer(tempCommandBuffer, &tempCommandBufferBeginInfo);
+
+  VkBufferImageCopy region = {
+    .bufferOffset = 0,
+    .bufferRowLength = 0,
+    .bufferImageHeight = 0,
+
+    .imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+    .imageSubresource.mipLevel = 0,
+    .imageSubresource.baseArrayLayer = 0,
+    .imageSubresource.layerCount = 1,
+  };
+
+  region.imageOffset.x = 0;
+  region.imageOffset.y = 0;
+  region.imageOffset.z = 0;
+
+  region.imageExtent.depth = 1;
+  region.imageExtent.height = height;
+  region.imageExtent.width = width;
+
+  vkCmdCopyBufferToImage(
+      tempCommandBuffer,
+      buffer,
+      image,
+      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+      1,
+      &region
+  );
+
+
+  vkEndCommandBuffer(tempCommandBuffer);
+
+  VkPipelineStageFlags stageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+
+  VkSubmitInfo submitInfo         = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+  submitInfo.pWaitDstStageMask    = &stageMask;
+  submitInfo.commandBufferCount   = 1;
+  submitInfo.pCommandBuffers      = &tempCommandBuffer;
+  submitInfo.waitSemaphoreCount   = 0;
+  submitInfo.pWaitSemaphores      = NULL;
+  submitInfo.signalSemaphoreCount = 0;
+  submitInfo.pSignalSemaphores    = NULL;
+
+  VkQueue transferQueue = VulkanQueueManager.getQueue(TRANSFER);
+  VK_ASSERT(vkQueueSubmit(transferQueue, 1, &submitInfo, VK_NULL_HANDLE));
+
+  //TODO Change this to take advantage of fences
+  vkQueueWaitIdle(transferQueue);
+
+  //vkFreeCommandBuffers(Vulkan.getDevice(), DATA(transferCommandPool), 1, &tempCommandBuffer);
+}
+
+EvTexture ev_vulkan_registerTexture(VkFormat format, uint32_t width, uint32_t height, void* pixels)
+{
+  uint32_t size = width * height * 4;
+
+  EvImage newimage;
+  ev_vulkan_allocateimageinpool(DATA(imagesPool), width, height , EV_USAGEFLAGS_RESOURCE_IMAGE, &newimage);
+  EvBuffer imageStagingBuffer;
+  ev_vulkan_allocatestagingbuffer(size, &imageStagingBuffer);
+  ev_vulkan_updatestagingbuffer(&imageStagingBuffer, size, pixels);
+
+  ev_vulkan_transitionimagelayout(newimage, format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+  ev_vulkan_copybuffertoimage(imageStagingBuffer.buffer, newimage.image, width, height);
+  ev_vulkan_transitionimagelayout(newimage, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+  ev_vulkan_destroybuffer(&imageStagingBuffer);
+
+  VkImageView imageView;
+  ev_vulkan_createimageview(format, &newimage.image, &imageView);
+
+  VkSampler sampler;
+  VkSamplerCreateInfo samplerInfo =
+  {
+      .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+      .magFilter = VK_FILTER_LINEAR,
+      .minFilter = VK_FILTER_LINEAR,
+      .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+      .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+      .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+      .anisotropyEnable = VK_FALSE,
+      .maxAnisotropy = 1.0f,
+      .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+      .unnormalizedCoordinates = VK_FALSE,
+      .compareEnable = VK_FALSE,
+      .compareOp = VK_COMPARE_OP_ALWAYS,
+      .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+      .mipLodBias = 0.0f,
+      .minLod = 0.0f,
+      .maxLod = 0.0f,
+  };
+  vkCreateSampler(VulkanData.logicalDevice, &samplerInfo, NULL, &sampler);
+
+  EvTexture evtexture = {
+      .image = newimage,
+      .imageView = imageView,
+      .sampler = sampler
+  };
+  return evtexture;
+}
+
+void ev_vulkan_destroytexture(EvTexture *texture)
+{
+  vkDestroySampler(VulkanData.logicalDevice, texture->sampler, NULL);
+  ev_vulkan_destroyimageview(texture->imageView);
+  ev_vulkan_destroyimage(texture->image);
 }

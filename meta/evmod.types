@@ -6,6 +6,12 @@ TYPE(Mesh, struct {
   uint32_t vertexBufferIndex;
 })
 
+TYPE(Texture, struct {
+  uint32_t bufferSize;
+  uint32_t width;
+	uint32_t height;
+})
+
 TYPE(RenderComponent, struct {
   uint32_t materialIndex;
   uint32_t pipelineIndex;

@@ -106,7 +106,7 @@ void ev_vulkan_allocateprimarycommandbuffer(QueueType queueType, VkCommandBuffer
 //vulkan images
 void ev_vulkan_createimage(VkImageCreateInfo *imageCreateInfo, VmaAllocationCreateInfo *allocationCreateInfo, EvImage *image);
 void ev_vulkan_createimageview(VkFormat imageFormat, VkImage *image, VkImageView* view);
-void ev_vulkan_destroyimage(EvImage *image);
+void ev_vulkan_destroyimage(EvImage image);
 void ev_vulkan_destroyimageview(VkImageView imageView);
 
 //vulkan buffers
@@ -132,7 +132,7 @@ void ev_vulkan_freeubo(UBO *ubo);
 void ev_vulkan_copybuffer(unsigned long long size, EvBuffer *src, EvBuffer *dst);
 void ev_vulkan_updatestagingbuffer(EvBuffer *buffer, unsigned long long bufferSize, const void *data);
 void ev_vulkan_allocatestagingbuffer(unsigned long long bufferSize, EvBuffer *buffer);
-void ev_vulkan_createresourcememorypool(unsigned long long blockSize, unsigned int minBlockCount, unsigned int maxBlockCount, VmaPool *pool);
+void ev_vulkan_createresourcememorypool(VkBufferUsageFlagBits memoryFlags ,unsigned long long blockSize, unsigned int minBlockCount, unsigned int maxBlockCount, VmaPool *pool);
 EvBuffer ev_vulkan_registerbuffer(void *data, unsigned long long size);
 void ev_vulkan_destroypipeline(VkPipeline pipeline);
 void ev_vulkan_destroypipelinelayout(VkPipelineLayout pipelineLayout);
@@ -148,3 +148,5 @@ VkCommandBuffer ev_vulkan_startframe();
 void ev_vulkan_endframe(VkCommandBuffer cmd);
 VkRenderPass ev_vulkan_getrenderpass();
 void ev_vulkan_wait();
+EvTexture ev_vulkan_registerTexture(VkFormat format, uint32_t width, uint32_t height, void* pixels);
+void ev_vulkan_destroytexture(EvTexture *texture);

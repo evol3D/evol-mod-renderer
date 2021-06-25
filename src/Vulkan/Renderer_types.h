@@ -19,6 +19,13 @@ typedef struct
   VmaAllocationInfo allocationInfo;
 } EvImage;
 
+typedef struct EvTexturer
+ {
+     EvImage image;
+     VkImageView imageView;
+     VkSampler sampler;
+ } EvTexture;
+
 #define SWAPCHAIN_MAX_IMAGES 5
 
 typedef struct
@@ -27,6 +34,17 @@ typedef struct
   VmaAllocation allocation;
   VmaAllocationInfo allocationInfo;
 } EvBuffer;
+
+typedef struct
+{
+  vec3 color;
+  uint32_t intensity;
+} Lights;
+
+typedef struct
+{
+  uint lightsCount;
+} EvScene;
 
 typedef struct {
   VkSurfaceKHR surface;
@@ -105,4 +123,5 @@ typedef struct {
 
 typedef struct {
   Vec4 baseColor;
+  uint32_t albedoIndex;
 } Material;

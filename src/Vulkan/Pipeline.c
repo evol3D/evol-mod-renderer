@@ -32,7 +32,7 @@ void descriptorSetLayoutData_destr(DescriptorSetLayoutData *data)
   vec_fini(data->bindings);
 }
 
-void ev_pipeline_reflectlayout(EvGraphicsPipelineCreateInfo pipelineCreateInfo, Pipeline *material)
+void ev_pipeline_reflectlayout(EvGraphicsPipelineCreateInfo pipelineCreateInfo, vec(DescriptorSet) overideSets, Pipeline *material)
 {
   vec(VkPushConstantRange) constant_ranges = vec_init(VkPushConstantRange);
   vec(DescriptorSetLayoutData) set_datalayouts = vec_init(DescriptorSetLayoutData, descriptorSetLayoutData_destr);
@@ -119,7 +119,12 @@ void ev_pipeline_reflectlayout(EvGraphicsPipelineCreateInfo pipelineCreateInfo, 
   material->pSets = vec_init(DescriptorSet);
   vec_setcapacity(&material->pSets, 4);
 
-  for (int i = 0; i < 4; i++)
+  uint32_t overrideCount = vec_len(overideSets);
+  for (size_t i = 0; i < overrideCount; i++) {
+    vec_push(&material->pSets, &overideSets[i]);
+  }
+
+  for (int i = overrideCount; i < 4; i++)
   {
     DescriptorSet realSet;
     realSet.layout = VK_NULL_HANDLE;
@@ -191,7 +196,7 @@ void ev_pipeline_reflectlayout(EvGraphicsPipelineCreateInfo pipelineCreateInfo, 
   vec_fini(constant_ranges);
 }
 
-void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, Pipeline *material)
+void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, vec(DescriptorSet) overideSets, Pipeline *material)
 {
   VkShaderModule shaderModules[evCreateInfo.stageCount];
   VkPipelineShaderStageCreateInfo shaderStageCreateInfos[evCreateInfo.stageCount];
@@ -213,7 +218,7 @@ void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, Pipeline *mate
     };
   }
 
-  ev_pipeline_reflectlayout(evCreateInfo, material);
+  ev_pipeline_reflectlayout(evCreateInfo, overideSets, material);
 
   VkPipelineVertexInputStateCreateInfo pipelineVertexInputState ={
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
