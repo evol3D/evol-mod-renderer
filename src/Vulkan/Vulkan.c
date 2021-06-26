@@ -14,6 +14,8 @@ struct ev_Vulkan_Data {
   VkDevice         logicalDevice;
   VkPhysicalDevice physicalDevice;
 
+  VkSurfaceKHR surface;
+
   VmaPool buffersPool;
   VmaPool imagesPool;
   VmaAllocator     allocator;
@@ -89,6 +91,9 @@ int ev_vulkan_deinit()
       vkDestroyCommandPool(VulkanData.logicalDevice, VulkanData.commandPools[i], NULL);
 
   ev_descriptormanager_dinit();
+
+  //Destroy Surface
+  ev_vulkan_destroysurface(VulkanData.surface);
 
   // Destroy VMA
   ev_vulkan_freememorypool(DATA(imagesPool));
@@ -242,6 +247,11 @@ EvSwapchain* ev_vulkan_getSwapchain()
   return &VulkanData.swapchain;
 }
 
+VkSurfaceKHR* ev_vulkan_getSurface()
+{
+  return &VulkanData.surface;
+}
+
 void ev_vulkan_recreateSwapChain()
 {
   vkDeviceWaitIdle(ev_vulkan_getlogicaldevice());
@@ -250,7 +260,7 @@ void ev_vulkan_recreateSwapChain()
 
   ev_renderer_updatewindowsize();
 
-  ev_swapchain_create(&DATA(swapchain));
+  ev_swapchain_create(&DATA(swapchain), &DATA(surface));
   ev_vulkan_createframebuffers();
 }
 
@@ -259,7 +269,7 @@ void ev_vulkan_checksurfacecompatibility()
   VkResult res;
 
   VkBool32 surfaceSupported = VK_FALSE;
-  vkGetPhysicalDeviceSurfaceSupportKHR(VulkanData.physicalDevice, VulkanQueueManager.getFamilyIndex(GRAPHICS), VulkanData.swapchain.surface, &surfaceSupported);
+  vkGetPhysicalDeviceSurfaceSupportKHR(VulkanData.physicalDevice, VulkanQueueManager.getFamilyIndex(GRAPHICS), VulkanData.surface, &surfaceSupported);
 
   res = surfaceSupported == VK_FALSE ? !VK_SUCCESS : VK_SUCCESS;
 
@@ -274,7 +284,7 @@ void ev_vulkan_destroysurface(VkSurfaceKHR surface)
 
 void ev_vulkan_createEvswapchain()
 {
-    ev_swapchain_create(&VulkanData.swapchain);
+    ev_swapchain_create(&VulkanData.swapchain, &VulkanData.surface);
 }
 
 void ev_vulkan_createswapchain(unsigned int* imageCount, VkExtent2D extent, VkSurfaceKHR* surface, VkSurfaceFormatKHR *surfaceFormat, VkSwapchainKHR oldSwapchain, VkSwapchainKHR* swapchain)

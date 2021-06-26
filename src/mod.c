@@ -323,8 +323,8 @@ void ev_renderer_updatewindowsize()
 
 void ev_renderer_createSurface()
 {
-  EvSwapchain *swapchain = ev_vulkan_getSwapchain();
-  VK_ASSERT(Window->createVulkanSurface(DATA(windowHandle), ev_vulkan_getinstance(), &swapchain->surface));
+  VkSurfaceKHR *surface = ev_vulkan_getSurface();
+  VK_ASSERT(Window->createVulkanSurface(DATA(windowHandle), ev_vulkan_getinstance(), surface));
   ev_vulkan_checksurfacecompatibility();
 }
 
@@ -372,11 +372,13 @@ void run()
 
   VkCommandBuffer cmd = ev_vulkan_startframe();
 
-  draw(cmd);
+  if (cmd) {
+    draw(cmd);
 
-  ev_vulkan_endframe(cmd);
+    ev_vulkan_endframe(cmd);
 
-  FrameData_clear(&DATA(currentFrame));
+    FrameData_clear(&DATA(currentFrame));
+  }
 }
 
 void ev_renderer_addFrameObjectData(RenderComponent *components, Matrix4x4 *transforms, uint32_t count)

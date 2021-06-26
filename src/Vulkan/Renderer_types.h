@@ -47,7 +47,6 @@ typedef struct
 } EvScene;
 
 typedef struct {
-  VkSurfaceKHR surface;
   VkExtent2D windowExtent;
 
   uint32_t imageCount;

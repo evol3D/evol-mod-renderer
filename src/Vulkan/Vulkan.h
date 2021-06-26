@@ -139,6 +139,7 @@ void ev_vulkan_destroypipelinelayout(VkPipelineLayout pipelineLayout);
 void ev_vulkan_destroyshadermodule(VkShaderModule shaderModule);
 void ev_vulkan_destroysetlayout(VkDescriptorSetLayout descriptorSetLayout);
 EvSwapchain* ev_vulkan_getSwapchain();
+VkSurfaceKHR* ev_vulkan_getSurface();
 void ev_vulkan_createrenderpass();
 void ev_vulkan_createframebuffers();
 void ev_vulkan_destroyframebuffer();

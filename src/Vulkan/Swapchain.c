@@ -56,7 +56,7 @@ void ev_swapchain_destroysyncstructures(EvSwapchain *Swapchain)
   }
 }
 
-void ev_swapchain_create(EvSwapchain *Swapchain)
+void ev_swapchain_create(EvSwapchain *Swapchain, VkSurfaceKHR *surface)
 {
   EvSwapchain oldSwapchain = *Swapchain;
   if (Swapchain->swapchain == NULL)
@@ -112,7 +112,7 @@ void ev_swapchain_create(EvSwapchain *Swapchain)
     vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &Swapchain->depthImageView);
   }
 
-  ev_vulkan_createswapchain(&Swapchain->imageCount, Swapchain->windowExtent, &Swapchain->surface, &Swapchain->surfaceFormat, oldSwapchain.swapchain, &Swapchain->swapchain);
+  ev_vulkan_createswapchain(&Swapchain->imageCount, Swapchain->windowExtent, surface, &Swapchain->surfaceFormat, oldSwapchain.swapchain, &Swapchain->swapchain);
 
   ev_vulkan_retrieveswapchainimages(Swapchain->swapchain, &Swapchain->imageCount, Swapchain->images);
 
@@ -126,7 +126,6 @@ void ev_swapchain_create(EvSwapchain *Swapchain)
   //should i destroy now the old one or wait ?
   if (oldSwapchain.swapchain != VK_NULL_HANDLE)
   {
-    Swapchain->surface = oldSwapchain.surface;
     ev_swapchain_destroy(&oldSwapchain);
   }
 }
@@ -141,7 +140,5 @@ void ev_swapchain_destroy(EvSwapchain *Swapchain)
   for (size_t i = 0; i < Swapchain->imageCount; i++)
     vkDestroyImageView(ev_vulkan_getlogicaldevice(), Swapchain->imageViews[i], NULL);
 
-  /* vkDestroySwapchainKHR(ev_vulkan_getlogicaldevice(), Swapchain->swapchain, NULL); */
-
-  ev_renderer_destroysurface(Swapchain->surface);
+  vkDestroySwapchainKHR(ev_vulkan_getlogicaldevice(), Swapchain->swapchain, NULL);
 }
