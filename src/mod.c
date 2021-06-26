@@ -597,7 +597,7 @@ void ev_material_readjsonlist(evjson_t *json_context, const char *list_name)
     evstring material_id = evstring_newfmt("%s[%d].id", list_name, i);
     evstring materialname = evstring_refclone(evjs_get(json_context, material_id)->as_str);
 
-    for (size_t j = 0; j < 3; j++)
+    for (size_t j = 0; j < 4; j++)
     {
       evstring material_basecolor = evstring_newfmt("%s[%d].baseColor[%d]", list_name, i, j);
       ((float*)&newMaterial.baseColor)[j] = (float)evjs_get(json_context, material_basecolor)->as_num;
@@ -616,6 +616,18 @@ void ev_material_readjsonlist(evjson_t *json_context, const char *list_name)
       newMaterial.albedoTexture = 0;
     }
     evstring_free(albedo_jsonid);
+
+    evstring normal_jsonid = evstring_newfmt("%s[%d].normalTexture", list_name, i);
+    evjson_entry *normalEntry = evjs_get(json_context, normal_jsonid);
+    if (normalEntry) {
+      evstring normal = evstring_refclone(normalEntry->as_str);
+      newMaterial.normalTexture = ev_renderer_registerTexture(normal);
+      evstring_free(normal);
+    }
+    else {
+      newMaterial.normalTexture = 0;
+    }
+    evstring_free(normal_jsonid);
 
     evstring metallicFactor_jsonid = evstring_newfmt("%s[%d].metallicFactor", list_name, i);
     evjson_entry *metallicFactorEntry = evjs_get(json_context, metallicFactor_jsonid);

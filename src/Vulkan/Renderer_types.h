@@ -124,6 +124,8 @@ typedef struct {
   Vec4 baseColor;
   uint32_t albedoTexture;
 
+  uint32_t normalTexture;
+
   float metallicFactor;
   float roughnessFactor;
   uint32_t metallicRoughnessTexture;
