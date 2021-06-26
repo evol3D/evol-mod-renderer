@@ -11,6 +11,9 @@
 
 #include <VulkanQueueManager.h>
 
+#define DEFAULTPIPELINE "DefaultPipeline"
+#define DEFAULTEXTURE "DefaultTexture"
+
 #define EV_WINDOW_VULKAN_SUPPORT
 #define IMPORT_MODULE evmod_glfw
 #include IMPORT_MODULE_H
@@ -523,30 +526,48 @@ TextureHandle ev_renderer_registerTexture(CONST_STR imagePath)
 
   Texture newTexture;
 
-  ev_log_debug("New image!: %s", imagePath);
-  AssetHandle image_handle = Asset->load(imagePath);
-  ImageAsset imageAsset = ImageLoader->loadAsset(image_handle);
-
-  newTexture.bufferSize = imageAsset.bufferSize;
-  newTexture.width = imageAsset.width;
-  newTexture.height = imageAsset.height;
-
   VkFormat format;
-  switch (imageAsset.format) {
-    case EV_IMAGEFORMAT_RGBA8:
-      format = VK_FORMAT_R8G8B8A8_SRGB;
+  EvTexture textureBuffer;
+  uint32_t textureIndex;
+  TextureHandle new_handle;
+
+  if (!strcmp(imagePath, DEFAULTEXTURE)) {
+    // default 2x2 texture
+    format = VK_FORMAT_R8G8B8A8_SRGB;
+
+    uint32_t pixels[4] = {~0, ~0, ~0, ~0};
+    newTexture.bufferSize = sizeof(pixels);
+    newTexture.width = 2;
+    newTexture.height = 2;
+
+    textureBuffer = ev_vulkan_registerTexture(format, 2, 2, pixels);
+    textureIndex = vec_push(&DATA(textureBuffers),  &textureBuffer);
+
+    new_handle = (TextureHandle)vec_push(&RendererData.textureLibrary.store, &newTexture);
+  }
+  else
+  {
+    AssetHandle image_handle = Asset->load(imagePath);
+    ImageAsset imageAsset = ImageLoader->loadAsset(image_handle);
+
+    switch (imageAsset.format) {
+      case EV_IMAGEFORMAT_RGBA8:
+        format = VK_FORMAT_R8G8B8A8_SRGB;
+    }
+
+    newTexture.bufferSize = imageAsset.bufferSize;
+    newTexture.width = imageAsset.width;
+    newTexture.height = imageAsset.height;
+
+    textureBuffer = ev_vulkan_registerTexture(format, imageAsset.width, imageAsset.height, imageAsset.data);
+    textureIndex = vec_push(&DATA(textureBuffers),  &textureBuffer);
+
+    new_handle = (TextureHandle)vec_push(&RendererData.textureLibrary.store, &newTexture);
   }
 
-  EvTexture textureBuffer = ev_vulkan_registerTexture(format, imageAsset.width, imageAsset.height, imageAsset.data);
-  uint32_t textureIndex = vec_push(&DATA(textureBuffers),  &textureBuffer);
-
-  TextureHandle new_handle = (TextureHandle)vec_push(&RendererData.textureLibrary.store, &newTexture);
   Hashmap(evstring, TextureHandle).push(DATA(textureLibrary).map, evstring_new(imagePath), new_handle);
-
-  DEBUG_ASSERT(textureIndex == new_handle);
-
   RendererData.textureLibrary.dirty = true;
-
+  DEBUG_ASSERT(textureIndex == new_handle);
   return new_handle;
 }
 
@@ -584,18 +605,63 @@ void ev_material_readjsonlist(evjson_t *json_context, const char *list_name)
       evstring_free(material_basecolor);
     }
 
-    evstring materialPipeline_jsonid = evstring_newfmt("%s[%d].pipeline", list_name, i);
-    evstring materialPipeline = evstring_refclone(evjs_get(json_context, materialPipeline_jsonid)->as_str);
-    PipelineHandle materialPipelineHandle = ev_renderer_getPipeline(materialPipeline);
-    evstring_free(materialPipeline);
-    evstring_free(materialPipeline_jsonid);
+    evstring albedo_jsonid = evstring_newfmt("%s[%d].albedoTexture", list_name, i);
+    evjson_entry *albedoEntry = evjs_get(json_context, albedo_jsonid);
+    if (albedoEntry) {
+      evstring albedo = evstring_refclone(albedoEntry->as_str);
+      newMaterial.albedoTexture = ev_renderer_registerTexture(albedo);
+      evstring_free(albedo);
+    }
+    else {
+      newMaterial.albedoTexture = 0;
+    }
+    evstring_free(albedo_jsonid);
 
-    evstring materialAlbedo_jsonid = evstring_newfmt("%s[%d].albedoTexture", list_name, i);
-    evstring materialAlbedo = evstring_refclone(evjs_get(json_context, materialAlbedo_jsonid)->as_str);
-    newMaterial.albedoIndex = ev_renderer_registerTexture(materialAlbedo);
-    ev_log_debug("%s\n\n\n",materialAlbedo);
-    evstring_free(materialAlbedo);
-    evstring_free(materialAlbedo_jsonid);
+    evstring metallicFactor_jsonid = evstring_newfmt("%s[%d].metallicFactor", list_name, i);
+    evjson_entry *metallicFactorEntry = evjs_get(json_context, metallicFactor_jsonid);
+    if (metallicFactorEntry) {
+      newMaterial.metallicFactor = (float)metallicFactorEntry->as_num;
+    }
+    else {
+      newMaterial.metallicFactor = 0;
+    }
+    evstring_free(metallicFactor_jsonid);
+
+    evstring roughnessFactor_jsonid = evstring_newfmt("%s[%d].roughnessFactor", list_name, i);
+    evjson_entry *roughnessFactorEntry = evjs_get(json_context, roughnessFactor_jsonid);
+    if (roughnessFactorEntry) {
+      newMaterial.roughnessFactor = (float)roughnessFactorEntry->as_num;
+    }
+    else {
+      newMaterial.roughnessFactor = 0;
+    }
+    evstring_free(roughnessFactor_jsonid);
+
+    evstring metallicRoughnessTexture_jsonid = evstring_newfmt("%s[%d].metallicRoughnessTexture", list_name, i);
+    evjson_entry *metallicRoughnessTextureEntry = evjs_get(json_context, metallicRoughnessTexture_jsonid);
+    if (metallicRoughnessTextureEntry) {
+      evstring metallicRoughnessTexture = evstring_refclone(metallicRoughnessTextureEntry->as_str);
+      newMaterial.metallicRoughnessTexture = ev_renderer_registerTexture(metallicRoughnessTexture);
+      evstring_free(metallicRoughnessTexture);
+    }
+    else {
+      newMaterial.metallicRoughnessTexture = 0;
+    }
+    evstring_free(metallicRoughnessTexture_jsonid);
+
+// TODO fix this
+    evstring materialPipeline_jsonid = evstring_newfmt("%s[%d].pipeline", list_name, i);
+    PipelineHandle materialPipelineHandle;
+    if (evjs_get(json_context, materialPipeline_jsonid))
+    {
+      evstring materialPipeline = evstring_refclone(evjs_get(json_context, materialPipeline_jsonid)->as_str);
+      materialPipelineHandle = ev_renderer_getPipeline(materialPipeline);
+      evstring_free(materialPipeline);
+    }
+    else {
+      materialPipelineHandle = ev_renderer_getPipeline(DEFAULTPIPELINE);
+    }
+    evstring_free(materialPipeline_jsonid);
 
     ev_renderer_registerMaterial(materialname, newMaterial, materialPipelineHandle);
 
@@ -740,6 +806,8 @@ EV_CONSTRUCTOR
   pipelineLibraryInit(&DATA(pipelineLibrary));
   textureLibraryInit(&(DATA(textureLibrary)));
   meshLibraryInit(&DATA(meshLibrary));
+
+  ev_renderer_registerTexture(DEFAULTEXTURE);
 }
 
 EV_DESTRUCTOR

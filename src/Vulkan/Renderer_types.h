@@ -37,7 +37,7 @@ typedef struct
 
 typedef struct
 {
-  vec3 color;
+  Vec3 color;
   uint32_t intensity;
 } Lights;
 
@@ -122,5 +122,9 @@ typedef struct {
 
 typedef struct {
   Vec4 baseColor;
-  uint32_t albedoIndex;
+  uint32_t albedoTexture;
+
+  float metallicFactor;
+  float roughnessFactor;
+  uint32_t metallicRoughnessTexture;
 } Material;
