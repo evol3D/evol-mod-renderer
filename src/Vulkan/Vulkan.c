@@ -504,7 +504,7 @@ void ev_vulkan_destroyimageview(VkImageView imageView)
   vkDestroyImageView(DATA(logicalDevice), imageView, NULL);
 }
 
-void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, void *data)
+void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, uint32_t arrayElement, void *data)
 {
   VkWriteDescriptorSet setWrite;
   switch(binding->type)
@@ -525,7 +525,7 @@ void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, void *data)
           .descriptorType = binding->type,
           .dstSet = set.set,
           .dstBinding = binding->binding,
-          .dstArrayElement = binding->writtenSetsCount,
+          .dstArrayElement = arrayElement,
           .pBufferInfo = &bufferInfo,
         };
         break;
@@ -550,7 +550,7 @@ void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, void *data)
           .descriptorType = binding->type,
           .dstSet = set.set,
           .dstBinding = binding->binding,
-          .dstArrayElement = binding->writtenSetsCount,
+          .dstArrayElement = arrayElement,
           .pImageInfo = &imageinfo,
         };
         break;
@@ -560,7 +560,6 @@ void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, void *data)
       ;
   }
 
-  binding->writtenSetsCount++;
   vkUpdateDescriptorSets(DATA(logicalDevice), 1, &setWrite, 0, NULL);
 }
 

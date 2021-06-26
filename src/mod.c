@@ -59,16 +59,19 @@ typedef struct {
 typedef struct {
   Map(evstring, PipelineHandle) map;
   vec(Pipeline) store;
+  bool dirty;
 } PipelineLibrary;
 
 typedef struct {
   Map(evstring, TextureHandle) map;
   vec(Texture) store;
+  bool dirty;
 } TextureLibrary;
 
 typedef struct {
   Map(evstring, MeshHandle) map;
   vec(Mesh) store;
+  bool dirty;
 } MeshLibrary;
 
 struct ev_Renderer_Data
@@ -138,11 +141,11 @@ void ev_renderer_globalsetsinit()
 
     //sceneBuffer
     ev_vulkan_allocateubo(sizeof(EvScene), false, &RendererData.scenesBuffer);
-    ev_vulkan_writeintobinding(DATA(sceneSet), &DATA(sceneSet).pBindings[0], &(DATA(scenesBuffer).buffer));
+    ev_vulkan_writeintobinding(DATA(sceneSet), &DATA(sceneSet).pBindings[0], 0, &(DATA(scenesBuffer).buffer));
 
     //lightsBuffer
     ev_vulkan_allocateubo(UBOMAXSIZE, false, &RendererData.lightsBuffer);
-    ev_vulkan_writeintobinding(DATA(sceneSet), &DATA(sceneSet).pBindings[1], &(DATA(lightsBuffer).buffer));
+    ev_vulkan_writeintobinding(DATA(sceneSet), &DATA(sceneSet).pBindings[1], 0, &(DATA(lightsBuffer).buffer));
   }
 
   //CameraSet
@@ -171,7 +174,7 @@ void ev_renderer_globalsetsinit()
     ev_descriptormanager_allocate(DATA(cameraSet).layout, &DATA(cameraSet).set);
 
     ev_vulkan_allocateubo(sizeof(CameraData), false, &RendererData.cameraBuffer);
-    ev_vulkan_writeintobinding(DATA(cameraSet), &DATA(cameraSet).pBindings[0], &(DATA(cameraBuffer).buffer));
+    ev_vulkan_writeintobinding(DATA(cameraSet), &DATA(cameraSet).pBindings[0], 0, &(DATA(cameraBuffer).buffer));
   }
 
   //Resources set
@@ -245,41 +248,19 @@ void ev_renderer_globalsetsdinit()
   //SceneSet
   ev_vulkan_freeubo(&DATA(scenesBuffer));
   ev_vulkan_freeubo(&DATA(lightsBuffer));
-  ev_vulkan_destroysetlayout(RendererData.sceneSet.layout);
+  // ev_vulkan_destroysetlayout(RendererData.sceneSet.layout);
 
   //cameraSet
   ev_vulkan_freeubo(&DATA(cameraBuffer));
-  ev_vulkan_destroysetlayout(RendererData.cameraSet.layout);
+  // ev_vulkan_destroysetlayout(RendererData.cameraSet.layout);
 
   //Resources set
   ev_vulkan_destroybuffer(&RendererData.materialsBuffer);
-  ev_vulkan_destroysetlayout(RendererData.resourcesSet.layout);
+  // ev_vulkan_destroysetlayout(RendererData.resourcesSet.layout);
 }
 
 void draw(VkCommandBuffer cmd)
 {
-  if (DATA(materialLibrary).dirty)
-  {
-    for (size_t i = 0; i < vec_len(RendererData.vertexBuffers); i++) {
-      // ev_log_debug();
-      ev_vulkan_writeintobinding(DATA(resourcesSet), &DATA(resourcesSet).pBindings[1], &(DATA(vertexBuffers)[i].buffer));
-    }
-
-    for (size_t i = 0; i < vec_len(RendererData.indexBuffers); i++) {
-      ev_vulkan_writeintobinding(DATA(resourcesSet), &DATA(resourcesSet).pBindings[2], &(DATA(indexBuffers)[i].buffer));
-    }
-
-    for (size_t i = 0; i < vec_len(RendererData.textureBuffers); i++) {
-      ev_vulkan_writeintobinding(DATA(resourcesSet), &DATA(resourcesSet).pBindings[4], &(DATA(textureBuffers)[i]));
-    }
-
-    size_t materialBufferLength = MAX(vec_len(RendererData.materialLibrary.store), vec_capacity(RendererData.materialLibrary.store));
-    RendererData.materialsBuffer = ev_vulkan_registerbuffer(RendererData.materialLibrary.store, sizeof(Material) * materialBufferLength);
-    ev_vulkan_writeintobinding(DATA(resourcesSet), &DATA(resourcesSet).pBindings[3], &RendererData.materialsBuffer);
-
-    DATA(materialLibrary).dirty = false;
-  }
-
   CameraData cam;
   Camera->getViewMat(NULL, NULL, cam.viewMat);
   Camera->getProjectionMat(NULL, NULL, cam.projectionMat);
@@ -355,6 +336,40 @@ void ev_renderer_destroysurface(VkSurfaceKHR surface)
 
 void run()
 {
+  if (DATA(materialLibrary).dirty)
+  {
+    ev_vulkan_wait();
+    size_t materialBufferLength = MAX(vec_len(RendererData.materialLibrary.store), vec_capacity(RendererData.materialLibrary.store));
+    RendererData.materialsBuffer = ev_vulkan_registerbuffer(RendererData.materialLibrary.store, sizeof(Material) * materialBufferLength);
+    ev_vulkan_writeintobinding(DATA(resourcesSet), &DATA(resourcesSet).pBindings[3], 0, &RendererData.materialsBuffer);
+
+    DATA(materialLibrary).dirty = false;
+  }
+
+  if (DATA(meshLibrary).dirty)
+  {
+    ev_vulkan_wait();
+    for (size_t i = 0; i < vec_len(RendererData.indexBuffers); i++) {
+      ev_vulkan_writeintobinding(DATA(resourcesSet), &DATA(resourcesSet).pBindings[2], i, &(DATA(indexBuffers)[i].buffer));
+    }
+
+    for (size_t i = 0; i < vec_len(RendererData.vertexBuffers); i++) {
+      ev_vulkan_writeintobinding(DATA(resourcesSet), &DATA(resourcesSet).pBindings[1], i, &(DATA(vertexBuffers)[i].buffer));
+    }
+
+    DATA(meshLibrary).dirty = false;
+  }
+
+  if (DATA(textureLibrary).dirty)
+  {
+    ev_vulkan_wait();
+    for (size_t i = 0; i < vec_len(RendererData.textureBuffers); i++) {
+      ev_vulkan_writeintobinding(DATA(resourcesSet), &DATA(resourcesSet).pBindings[4], i, &(DATA(textureBuffers)[i]));
+    }
+
+    DATA(textureLibrary).dirty = false;
+  }
+
   VkCommandBuffer cmd = ev_vulkan_startframe();
 
   draw(cmd);
@@ -393,7 +408,6 @@ MaterialHandle ev_renderer_registerMaterial(const char *materialName, Material m
   if (handle) {
     return *handle;
   }
-  DATA(materialLibrary).dirty = true;
 
   MaterialHandle new_handle = (MaterialHandle)vec_push(&RendererData.materialLibrary.store, &material);
   size_t usedPipelineIdx = vec_push(&RendererData.materialLibrary.pipelineHandles, &usedPipeline);
@@ -403,6 +417,8 @@ MaterialHandle ev_renderer_registerMaterial(const char *materialName, Material m
 
   Hashmap(evstring, MaterialHandle).push(DATA(materialLibrary).map, evstring_new(materialName), new_handle);
   ev_log_trace("new material! %f %f %f", material.baseColor.r, material.baseColor.g, material.baseColor.b);
+
+  RendererData.materialLibrary.dirty = true;
 
   return new_handle;
 }
@@ -489,6 +505,8 @@ MeshHandle ev_renderer_registerMesh(CONST_STR meshPath)
   MeshHandle new_handle = (MeshHandle)vec_push(&RendererData.meshLibrary.store, &newMesh);
   Hashmap(evstring, MeshHandle).push(DATA(meshLibrary).map, evstring_new(meshPath), new_handle);
 
+  RendererData.meshLibrary.dirty = true;
+
   return new_handle;
 }
 
@@ -524,6 +542,9 @@ TextureHandle ev_renderer_registerTexture(CONST_STR imagePath)
   Hashmap(evstring, TextureHandle).push(DATA(textureLibrary).map, evstring_new(imagePath), new_handle);
 
   DEBUG_ASSERT(textureIndex == new_handle);
+
+  RendererData.textureLibrary.dirty = true;
+
   return new_handle;
 }
 
@@ -760,7 +781,7 @@ void materialLibraryInit(MaterialLibrary *library)
   library->map = Hashmap(evstring, MaterialHandle).new();
   library->store = vec_init(Material);
   library->pipelineHandles = vec_init(PipelineHandle);
-  library->dirty = true;
+  library->dirty = false;
 }
 
 void materialLibraryDestroy(MaterialLibrary library)
@@ -774,6 +795,7 @@ void pipelineLibraryInit(PipelineLibrary *library)
 {
   library->map = Hashmap(evstring, PipelineHandle).new();
   library->store = vec_init(Pipeline, NULL, destroyPipeline);
+  library->dirty = false;
 }
 
 void pipelineLibraryDestroy(PipelineLibrary library)
@@ -786,6 +808,7 @@ void meshLibraryInit(MeshLibrary *library)
 {
   library->map = Hashmap(evstring, MeshHandle).new();
   library->store = vec_init(Mesh);
+  library->dirty = false;
 }
 
 void meshLibraryDestroy(MeshLibrary library)
@@ -798,6 +821,7 @@ void textureLibraryInit(TextureLibrary *library)
 {
   library->map = Hashmap(evstring, TextureHandle).new();
   library->store = vec_init(Texture);
+  library->dirty = false;
 }
 
 void textureLibraryDestroy(TextureLibrary library)
