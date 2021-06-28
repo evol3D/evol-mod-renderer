@@ -283,7 +283,7 @@ void draw(VkCommandBuffer cmd)
     pushconstant.vertexBufferIndex = component.mesh.indexBufferIndex;
     pushconstant.materialIndex = component.materialIndex;
 
-    vkCmdPushConstants(cmd, pipeline.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &pushconstant);
+    vkCmdPushConstants(cmd, pipeline.pipelineLayout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, sizeof(MeshPushConstants), &pushconstant);
 
     if (oldPipeline != pipeline.pipeline)
     {

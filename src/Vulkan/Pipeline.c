@@ -89,22 +89,20 @@ void ev_pipeline_reflectlayout(EvGraphicsPipelineCreateInfo pipelineCreateInfo, 
     result = spvReflectEnumeratePushConstants(&spvmodule, &count, NULL);
     assert(result == SPV_REFLECT_RESULT_SUCCESS);
 
-    vec(SpvReflectBlockVariable*) pconstants = vec_init(SpvReflectBlockVariable*);
+    SpvReflectBlockVariable* pconstants;
 
-    result = spvReflectEnumeratePushConstants(&spvmodule, &count, pconstants);
+    result = spvReflectEnumeratePushConstants(&spvmodule, &count, &pconstants);
     assert(result == SPV_REFLECT_RESULT_SUCCESS);
 
     if (count > 0) {
       VkPushConstantRange pcs = {
-        .offset = pconstants[stageIndex]->offset,
-        .size = pconstants[stageIndex]->size,
-        .stageFlags = pipelineCreateInfo.pShaders[stageIndex].stage,
+        .offset = pconstants->offset,
+        .size = pconstants->size,
+        .stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS,
       };
 
       vec_push(&constant_ranges, &pcs);
     }
-
-    vec_fini(pconstants);
 
     vec_fini(sets);
   }
