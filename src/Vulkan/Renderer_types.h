@@ -4,6 +4,7 @@
 #include <vk_mem_alloc.h>
 #include <evol/evol.h>
 #include <evol/threads/evolpthreads.h>
+#include <EvImage.h>
 
 typedef enum {
     VERTEXRESOURCE,
@@ -11,13 +12,6 @@ typedef enum {
     MATERIALRESOURCE,
     CUSTOMBUFFER,
 } RESOURCETYPE;
-
-typedef struct
-{
-  VkImage image;
-  VmaAllocation allocation;
-  VmaAllocationInfo allocationInfo;
-} EvImage;
 
 typedef struct EvTexturer
  {

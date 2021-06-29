@@ -19,6 +19,7 @@ mod_src = [
   'src/Vulkan/DescriptorManager.c',
   'src/Vulkan/VulkanQueueManager.c',
   'src/Vulkan/Pipeline.c',
+  'src/Vulkan/EvImage.c',
 ]
 
 mod_incdir = [

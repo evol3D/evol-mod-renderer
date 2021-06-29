@@ -1,10 +1,9 @@
 #include "Pipeline.h"
 
 #include <Renderer_types.h>
-#include <Vulkan_utils.h>
+#include <vk_utils.h>
 #include <evol/common/ev_macros.h>
 #include <vec.h>
-#include <Vulkan_utils.h>
 #include <spvref/spirv_reflect.h>
 #include <evol/common/ev_log.h>
 
@@ -96,9 +95,9 @@ void ev_pipeline_reflectlayout(EvGraphicsPipelineCreateInfo pipelineCreateInfo, 
 
     if (count > 0) {
       VkPushConstantRange pcs = {
-        .offset = pconstants[stageIndex]->offset,
-        .size = pconstants[stageIndex]->size,
-        .stageFlags = pipelineCreateInfo.pShaders[stageIndex].stage,
+        .offset = pconstants[0]->offset,
+        .size = pconstants[0]->size,
+        .stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS, //pipelineCreateInfo.pShaders[0].stage,
       };
 
       vec_push(&constant_ranges, &pcs);
@@ -181,7 +180,7 @@ void ev_pipeline_reflectlayout(EvGraphicsPipelineCreateInfo pipelineCreateInfo, 
     .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
     .setLayoutCount = vec_len(material->pSets),
     .pSetLayouts = setLayouts,
-    .pushConstantRangeCount = vec_len(constant_ranges),
+    .pushConstantRangeCount = 1, //vec_len(constant_ranges),
     .pPushConstantRanges = constant_ranges,
   };
 

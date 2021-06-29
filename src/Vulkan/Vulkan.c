@@ -1,7 +1,7 @@
 #include <Vulkan.h>
 
 #include <Swapchain.h>
-#include <Vulkan_utils.h>
+#include <vk_utils.h>
 #include <DescriptorManager.h>
 #include <evol/common/ev_log.h>
 
@@ -266,14 +266,9 @@ void ev_vulkan_recreateSwapChain()
 
 void ev_vulkan_checksurfacecompatibility()
 {
-  VkResult res;
-
   VkBool32 surfaceSupported = VK_FALSE;
   vkGetPhysicalDeviceSurfaceSupportKHR(VulkanData.physicalDevice, VulkanQueueManager.getFamilyIndex(GRAPHICS), VulkanData.surface, &surfaceSupported);
-
-  res = surfaceSupported == VK_FALSE ? !VK_SUCCESS : VK_SUCCESS;
-
-  VK_ASSERT(res);
+  DEBUG_ASSERT(surfaceSupported == VK_TRUE);
 }
 
 void ev_vulkan_destroysurface(VkSurfaceKHR surface)
@@ -284,7 +279,7 @@ void ev_vulkan_destroysurface(VkSurfaceKHR surface)
 
 void ev_vulkan_createEvswapchain()
 {
-    ev_swapchain_create(&VulkanData.swapchain, &VulkanData.surface);
+  ev_swapchain_create(&VulkanData.swapchain, &VulkanData.surface);
 }
 
 void ev_vulkan_createswapchain(unsigned int* imageCount, VkExtent2D extent, VkSurfaceKHR* surface, VkSurfaceFormatKHR *surfaceFormat, VkSwapchainKHR oldSwapchain, VkSwapchainKHR* swapchain)
@@ -418,11 +413,6 @@ void ev_vulkan_allocateprimarycommandbuffer(QueueType queueType, VkCommandBuffer
   vkAllocateCommandBuffers(VulkanData.logicalDevice, &cmdBufferAllocateInfo, cmdBuffer);
 }
 
-void ev_vulkan_createimage(VkImageCreateInfo *imageCreateInfo, VmaAllocationCreateInfo *allocationCreateInfo, EvImage *image)
-{
-  vmaCreateImage(VulkanData.allocator, imageCreateInfo, allocationCreateInfo, &(image->image), &(image->allocation), &(image->allocationInfo));
-}
-
 void ev_vulkan_createimageview(VkFormat imageFormat, VkImage *image, VkImageView* view)
 {
     VkImageViewCreateInfo imageViewCreateInfo = {
@@ -440,12 +430,7 @@ void ev_vulkan_createimageview(VkFormat imageFormat, VkImage *image, VkImageView
         },
     };
 
-    vkCreateImageView(VulkanData.logicalDevice, &imageViewCreateInfo, NULL, view);
-}
-
-void ev_vulkan_destroyimage(EvImage image)
-{
-  vmaDestroyImage(VulkanData.allocator, image.image, image.allocation);
+    VK_ASSERT(vkCreateImageView(VulkanData.logicalDevice, &imageViewCreateInfo, NULL, view));
 }
 
 void ev_vulkan_createbuffer(VkBufferCreateInfo *bufferCreateInfo, VmaAllocationCreateInfo *allocationCreateInfo, EvBuffer *buffer)
@@ -468,7 +453,7 @@ VkDevice ev_vulkan_getlogicaldevice()
   return VulkanData.logicalDevice;
 }
 
-VmaAllocator ev_vulkan_getvmaallocator()
+VmaAllocator ev_vulkan_getallocator()
 {
   return VulkanData.allocator;
 }
@@ -587,7 +572,7 @@ void ev_vulkan_allocateubo(unsigned long long bufferSize, bool persistentMap, UB
   ev_vulkan_createbuffer(&bufferCreateInfo, &allocationCreateInfo, &ubo->buffer);
 
   if(persistentMap)
-    vmaMapMemory(ev_vulkan_getvmaallocator, ubo->buffer.allocation, &ubo->mappedData);
+    vmaMapMemory(ev_vulkan_getallocator(), ubo->buffer.allocation, &ubo->mappedData);
   else
     ubo->mappedData = 0;
 }
@@ -601,9 +586,9 @@ void ev_vulkan_updateubo(unsigned long long bufferSize, const void *data, UBO *u
   }
   else
   {
-    vmaMapMemory(ev_vulkan_getvmaallocator(), ubo->buffer.allocation, &ubo->mappedData);
+    vmaMapMemory(ev_vulkan_getallocator(), ubo->buffer.allocation, &ubo->mappedData);
     memcpy(ubo->mappedData, data, bufferSize);
-    vmaUnmapMemory(ev_vulkan_getvmaallocator(), ubo->buffer.allocation);
+    vmaUnmapMemory(ev_vulkan_getallocator(), ubo->buffer.allocation);
 
     ubo->mappedData = 0;
   }
@@ -658,9 +643,9 @@ void ev_vulkan_copybuffer(unsigned long long size, EvBuffer *src, EvBuffer *dst)
 void ev_vulkan_updatestagingbuffer(EvBuffer *buffer, unsigned long long bufferSize, const void *data)
 {
   void *mapped;
-  vmaMapMemory(ev_vulkan_getvmaallocator(), buffer->allocation, &mapped);
+  vmaMapMemory(ev_vulkan_getallocator(), buffer->allocation, &mapped);
   memcpy(mapped, data, bufferSize);
-  vmaUnmapMemory(ev_vulkan_getvmaallocator(), buffer->allocation);
+  vmaUnmapMemory(ev_vulkan_getallocator(), buffer->allocation);
 }
 
 void ev_vulkan_allocatestagingbuffer(unsigned long long bufferSize, EvBuffer *buffer)
@@ -690,7 +675,7 @@ void ev_vulkan_createresourcememorypool(VkBufferUsageFlagBits memoryFlags ,unsig
 		.usage = VMA_MEMORY_USAGE_GPU_ONLY,
   };
 
-    vmaFindMemoryTypeIndexForBufferInfo(ev_vulkan_getvmaallocator(), &sampleBufferCreateInfo, &allocationCreateInfo, &memoryType);
+    vmaFindMemoryTypeIndexForBufferInfo(ev_vulkan_getallocator(), &sampleBufferCreateInfo, &allocationCreateInfo, &memoryType);
   }
 
   VmaPoolCreateInfo poolCreateInfo = {
@@ -1023,7 +1008,7 @@ VkRenderPass ev_vulkan_getrenderpass()
   return DATA(renderPass);
 }
 
-void ev_vulkan_allocateimageinpool(VmaPool pool, uint32_t width, uint32_t height, unsigned long long usageFlags, EvImage *image)
+EvImage ev_vulkan_allocateimageinpool(VmaPool pool, uint32_t width, uint32_t height, unsigned long long usageFlags)
 {
     VkImageCreateInfo imageCreateInfo = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -1045,7 +1030,7 @@ void ev_vulkan_allocateimageinpool(VmaPool pool, uint32_t width, uint32_t height
     .pool = pool,
   };
 
-  ev_vulkan_createimage(&imageCreateInfo, &allocationCreateInfo, image);
+  return evimage_new(&imageCreateInfo, VulkanData.allocator, &allocationCreateInfo);
 }
 
 void ev_vulkan_transitionimagelayout(EvImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
@@ -1063,7 +1048,7 @@ void ev_vulkan_transitionimagelayout(EvImage image, VkFormat format, VkImageLayo
     .newLayout = newLayout,
     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-    .image = image.image,
+    .image = image.vma_image.vk_image,
 
     .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
     .subresourceRange.baseMipLevel = 0,
@@ -1185,19 +1170,19 @@ EvTexture ev_vulkan_registerTexture(VkFormat format, uint32_t width, uint32_t he
   uint32_t size = width * height * 4;
 
   EvImage newimage;
-  ev_vulkan_allocateimageinpool(DATA(imagesPool), width, height , EV_USAGEFLAGS_RESOURCE_IMAGE, &newimage);
+  newimage = ev_vulkan_allocateimageinpool(DATA(imagesPool), width, height , EV_USAGEFLAGS_RESOURCE_IMAGE);
   EvBuffer imageStagingBuffer;
   ev_vulkan_allocatestagingbuffer(size, &imageStagingBuffer);
   ev_vulkan_updatestagingbuffer(&imageStagingBuffer, size, pixels);
 
   ev_vulkan_transitionimagelayout(newimage, format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-  ev_vulkan_copybuffertoimage(imageStagingBuffer.buffer, newimage.image, width, height);
+  ev_vulkan_copybuffertoimage(imageStagingBuffer.buffer, newimage.vma_image.vk_image, width, height);
   ev_vulkan_transitionimagelayout(newimage, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
   ev_vulkan_destroybuffer(&imageStagingBuffer);
 
   VkImageView imageView;
-  ev_vulkan_createimageview(format, &newimage.image, &imageView);
+  ev_vulkan_createimageview(format, &newimage.vma_image.vk_image, &imageView);
 
   VkSampler sampler;
   VkSamplerCreateInfo samplerInfo =
@@ -1208,7 +1193,7 @@ EvTexture ev_vulkan_registerTexture(VkFormat format, uint32_t width, uint32_t he
       .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
       .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
       .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-      .anisotropyEnable = VK_FALSE,
+      .anisotropyEnable = VK_TRUE,
       .maxAnisotropy = 1.0f,
       .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
       .unnormalizedCoordinates = VK_FALSE,
@@ -1233,5 +1218,5 @@ void ev_vulkan_destroytexture(EvTexture *texture)
 {
   vkDestroySampler(VulkanData.logicalDevice, texture->sampler, NULL);
   ev_vulkan_destroyimageview(texture->imageView);
-  ev_vulkan_destroyimage(texture->image);
+  evimage_destroy(texture->image);
 }

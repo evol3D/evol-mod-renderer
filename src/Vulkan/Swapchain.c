@@ -1,5 +1,5 @@
 #include <Swapchain.h>
-#include <Vulkan_utils.h>
+#include <vk_utils.h>
 #include <Vulkan.h>
 #include <evstr.h>
 #include <evol/evol.h>
@@ -93,11 +93,11 @@ void ev_swapchain_create(EvSwapchain *Swapchain, VkSurfaceKHR *surface)
       .usage = VMA_MEMORY_USAGE_GPU_ONLY,
     };
 
-    ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &Swapchain->depthImage);
+    Swapchain->depthImage = evimage_new(&depthImageCreateInfo, ev_vulkan_getallocator(), &vmaAllocationCreateInfo);
 
     VkImageViewCreateInfo depthImageViewCreateInfo = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-      .image = Swapchain->depthImage.image,
+      .image = Swapchain->depthImage.vma_image.vk_image,
       .viewType = VK_IMAGE_VIEW_TYPE_2D,
       .format = Swapchain->depthStencilFormat,
       .components = {0, 0, 0, 0},
@@ -134,7 +134,7 @@ void ev_swapchain_destroy(EvSwapchain *Swapchain)
   ev_swapchain_destroysyncstructures(Swapchain);
   ev_swapchain_destroycommandbuffers(Swapchain);
 
-  ev_vulkan_destroyimage(Swapchain->depthImage);
+  evimage_destroy(Swapchain->depthImage);
   ev_vulkan_destroyimageview(Swapchain->depthImageView);
 
   for (size_t i = 0; i < Swapchain->imageCount; i++)
