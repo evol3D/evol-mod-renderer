@@ -6,6 +6,7 @@
 #include <evol/threads/evolpthreads.h>
 #include <EvImage.h>
 #include <EvBuffer.h>
+#include <Library.h>
 
 typedef enum {
     VERTEXRESOURCE,

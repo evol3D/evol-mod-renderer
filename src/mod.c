@@ -8,11 +8,12 @@
 #include <Swapchain.h>
 #include <vk_utils.h>
 #include <Renderer_types.h>
+#include <FrameData.h>
 
 #include <VulkanQueueManager.h>
 
-#define DEFAULTPIPELINE "DefaultPipeline"
-#define DEFAULTEXTURE "DefaultTexture"
+#define DEFAULT_PIPELINE_NAME "DefaultPipeline"
+#define DEFAULT_TEXTURE_NAME "DefaultTexture"
 
 #define EV_WINDOW_VULKAN_SUPPORT
 #define IMPORT_MODULE evmod_glfw
@@ -24,58 +25,41 @@
 
 #define DATA(X) RendererData.X
 
-typedef GenericHandle PipelineHandle;
-#define INVALID_PIPELINE_HANDLE (~0ull)
+typedef LibraryHandle PipelineHandle;
+#define INVALID_PIPELINE_HANDLE INVALID_LIBRARY_HANDLE
 
-typedef GenericHandle MaterialHandle;
-#define INVALID_MATERIAL_HANDLE (~0ull)
+typedef LibraryHandle MaterialHandle;
+#define INVALID_MATERIAL_HANDLE INVALID_LIBRARY_HANDLE
 
-typedef GenericHandle MeshHandle;
-#define INVALID_MESH_HANDLE (~0ull)
+typedef LibraryHandle MeshHandle;
+#define INVALID_MESH_HANDLE INVALID_LIBRARY_HANDLE
 
-typedef GenericHandle TextureHandle;
-#define INVALID_TEXTURE_HANDLE (~0ull)
-
-HashmapDefine(evstring, MaterialHandle, evstring_free, NULL)
-HashmapDefine(evstring, PipelineHandle, evstring_free, NULL)
-HashmapDefine(evstring, TextureHandle, evstring_free, NULL)
-HashmapDefine(evstring, MeshHandle, evstring_free, NULL)
+typedef LibraryHandle TextureHandle;
+#define INVALID_TEXTURE_HANDLE INVALID_LIBRARY_HANDLE
 
 #define UBOMAXSIZE 16384
 
 typedef struct {
-  struct {
-    pthread_mutex_t objectMutex;
-    vec(RenderComponent) objectComponents;
-    vec(Matrix4x4) objectTranforms;
-  };
-
-} FrameData;
-
-typedef struct {
-  Map(evstring, MaterialHandle) map;
-  vec(Material) store;
+  Map(evstring, LibraryHandle) map;
+  vec(Material) list;
   vec(PipelineHandle) pipelineHandles;
   bool dirty;
 } MaterialLibrary;
 
-typedef struct {
-  Map(evstring, PipelineHandle) map;
-  vec(Pipeline) store;
-  bool dirty;
-} PipelineLibrary;
+void materialLibraryInit(MaterialLibrary *library)
+{
+  library->map = Hashmap(evstring, LibraryHandle).new();
+  library->list = vec_init(Material);
+  library->pipelineHandles = vec_init(PipelineHandle);
+  library->dirty = false;
+}
 
-typedef struct {
-  Map(evstring, TextureHandle) map;
-  vec(Texture) store;
-  bool dirty;
-} TextureLibrary;
-
-typedef struct {
-  Map(evstring, MeshHandle) map;
-  vec(Mesh) store;
-  bool dirty;
-} MeshLibrary;
+void materialLibraryDestroy(MaterialLibrary library)
+{
+  Hashmap(evstring, LibraryHandle).free(library.map);
+  vec_fini(library.list);
+  vec_fini(library.pipelineHandles);
+}
 
 struct ev_Renderer_Data
 {
@@ -87,9 +71,9 @@ struct ev_Renderer_Data
   DescriptorSet cameraSet;
   DescriptorSet resourcesSet;
 
-  MeshLibrary meshLibrary;
-  TextureLibrary textureLibrary;
-  PipelineLibrary pipelineLibrary;
+  Library(Mesh) meshLibrary;
+  Library(Texture) textureLibrary;
+  Library(Pipeline) pipelineLibrary;
   MaterialLibrary materialLibrary;
 
   UBO scenesBuffer;
@@ -110,7 +94,7 @@ evolmodule_t window_module;
 
 void ev_renderer_globalsetsinit()
 {
-  ev_log_debug("debuging bindings\n\n");
+  ev_log_debug("debugging bindings\n\n");
   //SceneSet
   {
     VkDescriptorSetLayoutBinding sceneBindings[] = {
@@ -275,7 +259,7 @@ void draw(VkCommandBuffer cmd)
   {
     RenderComponent component = DATA(currentFrame).objectComponents[componentIndex];
     ev_log_debug("mesh # %d, vertexbuffer: %d, indexbuffer: %d", componentIndex, component.mesh.vertexBufferIndex, component.mesh.indexBufferIndex);
-    Pipeline pipeline = DATA(pipelineLibrary.store[component.pipelineIndex]);
+    Pipeline pipeline = DATA(pipelineLibrary.list[component.pipelineIndex]);
 
     MeshPushConstants pushconstant;
     memcpy(pushconstant.transform, DATA(currentFrame).objectTranforms[componentIndex], sizeof(Matrix4x4));
@@ -342,8 +326,8 @@ void run()
   if (DATA(materialLibrary).dirty)
   {
     ev_vulkan_wait();
-    size_t materialBufferLength = MAX(vec_len(RendererData.materialLibrary.store), vec_capacity(RendererData.materialLibrary.store));
-    RendererData.materialsBuffer = ev_vulkan_registerbuffer(RendererData.materialLibrary.store, sizeof(Material) * materialBufferLength);
+    size_t materialBufferLength = MAX(vec_len(RendererData.materialLibrary.list), vec_capacity(RendererData.materialLibrary.list));
+    RendererData.materialsBuffer = ev_vulkan_registerbuffer(RendererData.materialLibrary.list, sizeof(Material) * materialBufferLength);
     ev_vulkan_writeintobinding(DATA(resourcesSet), &DATA(resourcesSet).pBindings[3], 0, &RendererData.materialsBuffer);
 
     DATA(materialLibrary).dirty = false;
@@ -397,7 +381,7 @@ void ev_renderer_addFrameObjectData(RenderComponent *components, Matrix4x4 *tran
 
 MaterialHandle ev_renderer_getMaterial(const char *materialName)
 {
-  MaterialHandle *handle = Hashmap(evstring, MaterialHandle).get(DATA(materialLibrary).map, materialName);
+  MaterialHandle *handle = Hashmap(evstring, LibraryHandle).get(DATA(materialLibrary).map, materialName);
 
   if (handle) {
     return *handle;
@@ -408,19 +392,19 @@ MaterialHandle ev_renderer_getMaterial(const char *materialName)
 
 MaterialHandle ev_renderer_registerMaterial(const char *materialName, Material material, PipelineHandle usedPipeline)
 {
-  MaterialHandle *handle = Hashmap(evstring, MaterialHandle).get(DATA(materialLibrary).map, materialName);
+  MaterialHandle *handle = Hashmap(evstring, LibraryHandle).get(DATA(materialLibrary).map, materialName);
 
   if (handle) {
     return *handle;
   }
 
-  MaterialHandle new_handle = (MaterialHandle)vec_push(&RendererData.materialLibrary.store, &material);
+  MaterialHandle new_handle = (MaterialHandle)vec_push(&RendererData.materialLibrary.list, &material);
   size_t usedPipelineIdx = vec_push(&RendererData.materialLibrary.pipelineHandles, &usedPipeline);
   (void) usedPipelineIdx;
-  DEBUG_ASSERT(vec_len(RendererData.materialLibrary.store) == vec_len(RendererData.materialLibrary.pipelineHandles));
+  DEBUG_ASSERT(vec_len(RendererData.materialLibrary.list) == vec_len(RendererData.materialLibrary.pipelineHandles));
   DEBUG_ASSERT(usedPipelineIdx == new_handle);
 
-  Hashmap(evstring, MaterialHandle).push(DATA(materialLibrary).map, evstring_new(materialName), new_handle);
+  Hashmap(evstring, LibraryHandle).push(DATA(materialLibrary).map, evstring_new(materialName), new_handle);
   ev_log_trace("new material! %f %f %f", material.baseColor.r, material.baseColor.g, material.baseColor.b);
 
   RendererData.materialLibrary.dirty = true;
@@ -430,7 +414,7 @@ MaterialHandle ev_renderer_registerMaterial(const char *materialName, Material m
 
 PipelineHandle ev_renderer_getPipeline(CONST_STR pipelineName)
 {
-  PipelineHandle *handle = Hashmap(evstring, PipelineHandle).get(DATA(pipelineLibrary).map, pipelineName);
+  PipelineHandle *handle = Hashmap(evstring, LibraryHandle).get(DATA(pipelineLibrary).map, pipelineName);
 
   if (handle) {
     return *handle;
@@ -441,7 +425,7 @@ PipelineHandle ev_renderer_getPipeline(CONST_STR pipelineName)
 
 PipelineHandle ev_renderer_registerPipeline(CONST_STR pipelineName, vec(Shader) *shaders)
 {
-  PipelineHandle *handle = Hashmap(evstring, PipelineHandle).get(DATA(pipelineLibrary).map, pipelineName);
+  PipelineHandle *handle = Hashmap(evstring, LibraryHandle).get(DATA(pipelineLibrary).map, pipelineName);
 
   if (handle) {
     return *handle;
@@ -466,8 +450,8 @@ PipelineHandle ev_renderer_registerPipeline(CONST_STR pipelineName, vec(Shader) 
   for (size_t i = 0; i < vec_len(newPipeline.pSets); i++)
   ev_descriptormanager_allocate(newPipeline.pSets[i].layout, &newPipeline.pSets[i].set);
 
-  PipelineHandle new_handle = (PipelineHandle)vec_push(&RendererData.pipelineLibrary.store, &newPipeline);
-  Hashmap(evstring, MaterialHandle).push(DATA(pipelineLibrary).map, evstring_new(pipelineName), new_handle);
+  PipelineHandle new_handle = (PipelineHandle)vec_push(&RendererData.pipelineLibrary.list, &newPipeline);
+  Hashmap(evstring, LibraryHandle).push(DATA(pipelineLibrary).map, evstring_new(pipelineName), new_handle);
 
   return new_handle;
 }
@@ -485,7 +469,7 @@ void destroyPipeline(Pipeline *pipeline)
 
 MeshHandle ev_renderer_registerMesh(CONST_STR meshPath)
 {
-  MeshHandle *handle = Hashmap(evstring, MeshHandle).get(DATA(meshLibrary).map, meshPath);
+  MeshHandle *handle = Hashmap(evstring, LibraryHandle).get(DATA(meshLibrary).map, meshPath);
 
   if (handle) {
     ev_log_debug("found mesh in library!");
@@ -507,8 +491,8 @@ MeshHandle ev_renderer_registerMesh(CONST_STR meshPath)
   newMesh.indexBufferIndex  = vec_push(&DATA(indexBuffers),  &indexBuffer);
   newMesh.vertexBufferIndex = vec_push(&DATA(vertexBuffers), &vertexBuffer);
 
-  MeshHandle new_handle = (MeshHandle)vec_push(&RendererData.meshLibrary.store, &newMesh);
-  Hashmap(evstring, MeshHandle).push(DATA(meshLibrary).map, evstring_new(meshPath), new_handle);
+  MeshHandle new_handle = (MeshHandle)vec_push(&RendererData.meshLibrary.list, &newMesh);
+  Hashmap(evstring, LibraryHandle).push(DATA(meshLibrary).map, evstring_new(meshPath), new_handle);
 
   RendererData.meshLibrary.dirty = true;
 
@@ -517,7 +501,7 @@ MeshHandle ev_renderer_registerMesh(CONST_STR meshPath)
 
 TextureHandle ev_renderer_registerTexture(CONST_STR imagePath)
 {
-  TextureHandle *handle = Hashmap(evstring, TextureHandle).get(DATA(textureLibrary).map, imagePath);
+  TextureHandle *handle = Hashmap(evstring, LibraryHandle).get(DATA(textureLibrary).map, imagePath);
 
   if (handle) {
     ev_log_debug("found image in library!");
@@ -531,7 +515,7 @@ TextureHandle ev_renderer_registerTexture(CONST_STR imagePath)
   uint32_t textureIndex;
   TextureHandle new_handle;
 
-  if (!strcmp(imagePath, DEFAULTEXTURE)) {
+  if (!strcmp(imagePath, DEFAULT_TEXTURE_NAME)) {
     // default 2x2 texture
     format = VK_FORMAT_R8G8B8A8_SRGB;
 
@@ -543,7 +527,7 @@ TextureHandle ev_renderer_registerTexture(CONST_STR imagePath)
     textureBuffer = ev_vulkan_registerTexture(format, 2, 2, pixels);
     textureIndex = vec_push(&DATA(textureBuffers),  &textureBuffer);
 
-    new_handle = (TextureHandle)vec_push(&RendererData.textureLibrary.store, &newTexture);
+    new_handle = (TextureHandle)vec_push(&RendererData.textureLibrary.list, &newTexture);
   }
   else
   {
@@ -562,10 +546,10 @@ TextureHandle ev_renderer_registerTexture(CONST_STR imagePath)
     textureBuffer = ev_vulkan_registerTexture(format, imageAsset.width, imageAsset.height, imageAsset.data);
     textureIndex = vec_push(&DATA(textureBuffers),  &textureBuffer);
 
-    new_handle = (TextureHandle)vec_push(&RendererData.textureLibrary.store, &newTexture);
+    new_handle = (TextureHandle)vec_push(&RendererData.textureLibrary.list, &newTexture);
   }
 
-  Hashmap(evstring, TextureHandle).push(DATA(textureLibrary).map, evstring_new(imagePath), new_handle);
+  Hashmap(evstring, LibraryHandle).push(DATA(textureLibrary).map, evstring_new(imagePath), new_handle);
   RendererData.textureLibrary.dirty = true;
   DEBUG_ASSERT(textureIndex == new_handle);
   return new_handle;
@@ -579,7 +563,7 @@ RenderComponent ev_renderer_registerRenderComponent(const char *meshPath, const 
 
   newComponent.materialIndex = ev_renderer_getMaterial(materialName);
   newComponent.pipelineIndex = RendererData.materialLibrary.pipelineHandles[newComponent.materialIndex];
-  newComponent.mesh = RendererData.meshLibrary.store[ev_renderer_registerMesh(meshPath)];
+  newComponent.mesh = RendererData.meshLibrary.list[ev_renderer_registerMesh(meshPath)];
 
   return newComponent;
 }
@@ -671,7 +655,7 @@ void ev_material_readjsonlist(evjson_t *json_context, const char *list_name)
       evstring_free(materialPipeline);
     }
     else {
-      materialPipelineHandle = ev_renderer_getPipeline(DEFAULTPIPELINE);
+      materialPipelineHandle = ev_renderer_getPipeline(DEFAULT_PIPELINE_NAME);
     }
     evstring_free(materialPipeline_jsonid);
 
@@ -767,31 +751,6 @@ void ev_graphicspipeline_readjsonlist(evjson_t *json_context, const char *list_n
   evstring_free(pipelineCount_jsonid);
 }
 
-void FrameData_init(FrameData *frame)
-{
-  frame->objectComponents = vec_init(RenderComponent);
-
-  frame->objectTranforms = vec_init(Matrix4x4);
-
-  pthread_mutex_init(&frame->objectMutex, NULL);
-}
-
-void FrameData_fini(FrameData *frame)
-{
-  vec_fini(frame->objectComponents);
-
-  vec_fini(frame->objectTranforms);
-
-  pthread_mutex_destroy(&frame->objectMutex);
-}
-
-void FrameData_clear(FrameData *frame)
-{
-  vec_clear(frame->objectComponents);
-
-  vec_clear(frame->objectTranforms);
-}
-
 EV_CONSTRUCTOR
 {
   game_module = evol_loadmodule_weak("game");        DEBUG_ASSERT(game_module);
@@ -815,11 +774,11 @@ EV_CONSTRUCTOR
   ev_renderer_globalsetsinit();
 
   materialLibraryInit(&DATA(materialLibrary));
-  pipelineLibraryInit(&DATA(pipelineLibrary));
-  textureLibraryInit(&(DATA(textureLibrary)));
-  meshLibraryInit(&DATA(meshLibrary));
+  LibraryInit(&RendererData.pipelineLibrary, Pipeline, destroyPipeline);
+  LibraryInit(&RendererData.textureLibrary, Texture);
+  LibraryInit(&RendererData.meshLibrary, Mesh);
 
-  ev_renderer_registerTexture(DEFAULTEXTURE);
+  ev_renderer_registerTexture(DEFAULT_TEXTURE_NAME);
 }
 
 EV_DESTRUCTOR
@@ -831,10 +790,10 @@ EV_DESTRUCTOR
   vec_fini(DATA(vertexBuffers));
   vec_fini(DATA(indexBuffers));
 
-  meshLibraryDestroy(DATA(meshLibrary));
-  textureLibraryDestroy(DATA(textureLibrary));
+  LibraryDestroy(RendererData.meshLibrary);
+  LibraryDestroy(RendererData.textureLibrary);
+  LibraryDestroy(RendererData.pipelineLibrary);
   materialLibraryDestroy(DATA(materialLibrary));
-  pipelineLibraryDestroy(DATA(pipelineLibrary));
 
   ev_renderer_globalsetsdinit();
 
@@ -856,58 +815,4 @@ EV_BINDINGS
   EV_NS_BIND_FN(Material, readJSONList, ev_material_readjsonlist);
 
   EV_NS_BIND_FN(GraphicsPipeline, readJSONList, ev_graphicspipeline_readjsonlist);
-}
-
-void materialLibraryInit(MaterialLibrary *library)
-{
-  library->map = Hashmap(evstring, MaterialHandle).new();
-  library->store = vec_init(Material);
-  library->pipelineHandles = vec_init(PipelineHandle);
-  library->dirty = false;
-}
-
-void materialLibraryDestroy(MaterialLibrary library)
-{
-  Hashmap(evstring, MaterialHandle).free(library.map);
-  vec_fini(library.store);
-  vec_fini(library.pipelineHandles);
-}
-
-void pipelineLibraryInit(PipelineLibrary *library)
-{
-  library->map = Hashmap(evstring, PipelineHandle).new();
-  library->store = vec_init(Pipeline, NULL, destroyPipeline);
-  library->dirty = false;
-}
-
-void pipelineLibraryDestroy(PipelineLibrary library)
-{
-  Hashmap(evstring, PipelineHandle).free(library.map);
-  vec_fini(library.store);
-}
-
-void meshLibraryInit(MeshLibrary *library)
-{
-  library->map = Hashmap(evstring, MeshHandle).new();
-  library->store = vec_init(Mesh);
-  library->dirty = false;
-}
-
-void meshLibraryDestroy(MeshLibrary library)
-{
-  Hashmap(evstring, MeshHandle).free(library.map);
-  vec_fini(library.store);
-}
-
-void textureLibraryInit(TextureLibrary *library)
-{
-  library->map = Hashmap(evstring, TextureHandle).new();
-  library->store = vec_init(Texture);
-  library->dirty = false;
-}
-
-void textureLibraryDestroy(TextureLibrary library)
-{
-  Hashmap(evstring, TextureHandle).free(library.map);
-  vec_fini(library.store);
 }

@@ -21,6 +21,7 @@ mod_src = [
   'src/Vulkan/Pipeline.c',
   'src/Vulkan/EvImage.c',
   'src/Vulkan/EvBuffer.c',
+  'src/Vulkan/FrameData.c',
 ]
 
 mod_incdir = [
