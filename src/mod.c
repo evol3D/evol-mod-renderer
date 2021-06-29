@@ -26,15 +26,13 @@
 #define DATA(X) RendererData.X
 
 typedef LibraryHandle PipelineHandle;
-#define INVALID_PIPELINE_HANDLE INVALID_LIBRARY_HANDLE
-
 typedef LibraryHandle MaterialHandle;
-#define INVALID_MATERIAL_HANDLE INVALID_LIBRARY_HANDLE
-
 typedef LibraryHandle MeshHandle;
-#define INVALID_MESH_HANDLE INVALID_LIBRARY_HANDLE
-
 typedef LibraryHandle TextureHandle;
+
+#define INVALID_PIPELINE_HANDLE INVALID_LIBRARY_HANDLE
+#define INVALID_MATERIAL_HANDLE INVALID_LIBRARY_HANDLE
+#define INVALID_MESH_HANDLE INVALID_LIBRARY_HANDLE
 #define INVALID_TEXTURE_HANDLE INVALID_LIBRARY_HANDLE
 
 #define UBOMAXSIZE 16384
@@ -327,6 +325,7 @@ void run()
   {
     ev_vulkan_wait();
     size_t materialBufferLength = MAX(vec_len(RendererData.materialLibrary.list), vec_capacity(RendererData.materialLibrary.list));
+    // BUG: This leaks hard
     RendererData.materialsBuffer = ev_vulkan_registerbuffer(RendererData.materialLibrary.list, sizeof(Material) * materialBufferLength);
     ev_vulkan_writeintobinding(DATA(resourcesSet), &DATA(resourcesSet).pBindings[3], 0, &RendererData.materialsBuffer);
 

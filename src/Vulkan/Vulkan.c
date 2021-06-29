@@ -495,7 +495,11 @@ void ev_vulkan_destroyimageview(VkImageView imageView)
 
 void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, uint32_t arrayElement, void *data)
 {
-  VkWriteDescriptorSet setWrite;
+  VkWriteDescriptorSet setWrite = {0};
+  union {
+    VkDescriptorBufferInfo bufferInfo;
+    VkDescriptorImageInfo imageinfo;
+  } descriptorInfo;
   switch(binding->type)
   {
     case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
@@ -503,7 +507,7 @@ void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, uint32_t ar
     case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
     case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
       {
-        VkDescriptorBufferInfo bufferInfo = {
+        descriptorInfo.bufferInfo = (VkDescriptorBufferInfo){
           .buffer = ((EvBuffer*)data)->vma_buffer.vk_buffer,
           .offset = 0,
           .range = VK_WHOLE_SIZE,
@@ -515,7 +519,7 @@ void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, uint32_t ar
           .dstSet = set.set,
           .dstBinding = binding->binding,
           .dstArrayElement = arrayElement,
-          .pBufferInfo = &bufferInfo,
+          .pBufferInfo = &descriptorInfo.bufferInfo,
         };
         break;
       }
@@ -527,7 +531,7 @@ void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, uint32_t ar
     case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
       {
         EvTexture texture = *(EvTexture*)data;
-        VkDescriptorImageInfo imageinfo = {
+        descriptorInfo.imageinfo = (VkDescriptorImageInfo){
           .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
           .imageView   = texture.imageView,
           .sampler     = texture.sampler,
@@ -540,7 +544,7 @@ void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, uint32_t ar
           .dstSet = set.set,
           .dstBinding = binding->binding,
           .dstArrayElement = arrayElement,
-          .pImageInfo = &imageinfo,
+          .pImageInfo = &descriptorInfo.imageinfo,
         };
         break;
       }
@@ -1183,8 +1187,8 @@ EvTexture ev_vulkan_registerTexture(VkFormat format, uint32_t width, uint32_t he
       .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
       .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
       .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-      .anisotropyEnable = VK_TRUE,
-      .maxAnisotropy = 1.0f,
+      .anisotropyEnable = VK_FALSE,
+      .maxAnisotropy = 0.0f,
       .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
       .unnormalizedCoordinates = VK_FALSE,
       .compareEnable = VK_FALSE,
