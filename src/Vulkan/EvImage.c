@@ -1,5 +1,4 @@
 #include <EvImage.h>
-#include <vk_utils.h>
 
 EvImage 
 evimage_new(

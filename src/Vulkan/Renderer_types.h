@@ -5,6 +5,7 @@
 #include <evol/evol.h>
 #include <evol/threads/evolpthreads.h>
 #include <EvImage.h>
+#include <EvBuffer.h>
 
 typedef enum {
     VERTEXRESOURCE,
@@ -21,13 +22,6 @@ typedef struct EvTexturer
  } EvTexture;
 
 #define SWAPCHAIN_MAX_IMAGES 5
-
-typedef struct
-{
-  VkBuffer buffer;
-  VmaAllocation allocation;
-  VmaAllocationInfo allocationInfo;
-} EvBuffer;
 
 typedef struct
 {

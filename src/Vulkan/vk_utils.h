@@ -17,6 +17,14 @@
 #define MAX(x1, x2) ( x1 > x2 ? x1:x2)
 #define MIN(x1, x2) ( x1 < x2 ? x1:x2)
 
+#include <vk_mem_alloc.h>
+
+typedef struct {
+  VmaAllocator allocator;
+  VmaAllocation allocation;
+  VmaAllocationInfo allocationInfo;
+} VmaData;
+
 static inline const char * VkResultStrings(VkResult res) {
   switch(res) {
     case VK_SUCCESS:
@@ -88,5 +96,5 @@ static inline const char * VkResultStrings(VkResult res) {
     default:
       return NULL;
   }
-};
+}
 

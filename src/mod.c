@@ -36,10 +36,10 @@ typedef GenericHandle MeshHandle;
 typedef GenericHandle TextureHandle;
 #define INVALID_TEXTURE_HANDLE (~0ull)
 
-HashmapDefine(evstring, MaterialHandle, evstring_free, NULL);
-HashmapDefine(evstring, PipelineHandle, evstring_free, NULL);
-HashmapDefine(evstring, TextureHandle, evstring_free, NULL);
-HashmapDefine(evstring, MeshHandle, evstring_free, NULL);
+HashmapDefine(evstring, MaterialHandle, evstring_free, NULL)
+HashmapDefine(evstring, PipelineHandle, evstring_free, NULL)
+HashmapDefine(evstring, TextureHandle, evstring_free, NULL)
+HashmapDefine(evstring, MeshHandle, evstring_free, NULL)
 
 #define UBOMAXSIZE 16384
 
@@ -258,7 +258,7 @@ void ev_renderer_globalsetsdinit()
   // ev_vulkan_destroysetlayout(RendererData.cameraSet.layout);
 
   //Resources set
-  ev_vulkan_destroybuffer(&RendererData.materialsBuffer);
+  evbuffer_destroy(RendererData.materialsBuffer);
   // ev_vulkan_destroysetlayout(RendererData.resourcesSet.layout);
 }
 
@@ -353,11 +353,11 @@ void run()
   {
     ev_vulkan_wait();
     for (size_t i = 0; i < vec_len(RendererData.indexBuffers); i++) {
-      ev_vulkan_writeintobinding(DATA(resourcesSet), &DATA(resourcesSet).pBindings[2], i, &(DATA(indexBuffers)[i].buffer));
+      ev_vulkan_writeintobinding(DATA(resourcesSet), &DATA(resourcesSet).pBindings[2], i, &(DATA(indexBuffers)[i].vma_buffer.vk_buffer));
     }
 
     for (size_t i = 0; i < vec_len(RendererData.vertexBuffers); i++) {
-      ev_vulkan_writeintobinding(DATA(resourcesSet), &DATA(resourcesSet).pBindings[1], i, &(DATA(vertexBuffers)[i].buffer));
+      ev_vulkan_writeintobinding(DATA(resourcesSet), &DATA(resourcesSet).pBindings[1], i, &(DATA(vertexBuffers)[i].vma_buffer.vk_buffer));
     }
 
     DATA(meshLibrary).dirty = false;
@@ -806,9 +806,9 @@ EV_CONSTRUCTOR
   FrameData_init(&DATA(currentFrame));
 
   RendererData.textureBuffers = vec_init(EvTexture, NULL, ev_vulkan_destroytexture);
-  RendererData.vertexBuffers  = vec_init(EvBuffer, NULL, ev_vulkan_destroybuffer);
-  RendererData.indexBuffers   = vec_init(EvBuffer, NULL, ev_vulkan_destroybuffer);
-  RendererData.customBuffers  = vec_init(EvBuffer, NULL, ev_vulkan_destroybuffer);
+  RendererData.vertexBuffers  = vec_init(EvBuffer, NULL, evbuffer_pdestroy);
+  RendererData.indexBuffers   = vec_init(EvBuffer, NULL, evbuffer_pdestroy);
+  RendererData.customBuffers  = vec_init(EvBuffer, NULL, evbuffer_pdestroy);
 
   ev_vulkan_init();
 

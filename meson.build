@@ -20,6 +20,7 @@ mod_src = [
   'src/Vulkan/VulkanQueueManager.c',
   'src/Vulkan/Pipeline.c',
   'src/Vulkan/EvImage.c',
+  'src/Vulkan/EvBuffer.c',
 ]
 
 mod_incdir = [

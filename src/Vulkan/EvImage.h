@@ -2,12 +2,7 @@
 
 #include <volk.h>
 #include <vk_mem_alloc.h>
-
-typedef struct {
-  VmaAllocator allocator;
-  VmaAllocation allocation;
-  VmaAllocationInfo allocationInfo;
-} VmaData;
+#include <vk_utils.h>
 
 typedef struct {
   VkImage vk_image;
