@@ -314,6 +314,9 @@ void setWindow(WindowHandle handle)
 
   ev_renderer_createSurface();
   ev_vulkan_createEvswapchain();
+
+  ev_vulkan_createoffscreenrenderpass();
+  ev_vulkan_createoffscreenframebuffer();
   ev_vulkan_createrenderpass();
   ev_vulkan_createframebuffers();
 }
@@ -373,13 +376,14 @@ void run()
     DATA(textureLibrary).dirty = false;
   }
 
-  VkCommandBuffer cmd = ev_vulkan_startframe();
+  VkCommandBuffer cmd = ev_vulkan_offscreencommandbuffer();
+  draw(cmd);
+  vkCmdEndRenderPass(cmd);
+  vkEndCommandBuffer(cmd);
 
+  cmd = ev_vulkan_startframe();
   if (cmd) {
-    draw(cmd);
-
     ev_vulkan_endframe(cmd);
-
     FrameData_clear(&DATA(currentFrame));
   }
 }

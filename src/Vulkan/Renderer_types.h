@@ -35,6 +35,20 @@ typedef struct
   VmaAllocationInfo allocationInfo;
 } EvBuffer;
 
+typedef struct {
+		EvImage evImage;
+		VkDeviceMemory mem;
+		VkImageView view;
+		VkFormat format;
+	} FrameBufferAttachment;
+
+	typedef struct {
+		VkFramebuffer frameBuffer;
+		FrameBufferAttachment position, normal, albedo;
+		FrameBufferAttachment depth;
+		VkRenderPass renderPass;
+	} FrameBuffer;
+
 typedef struct
 {
   Vec3 color;

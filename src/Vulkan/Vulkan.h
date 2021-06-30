@@ -125,7 +125,7 @@ void ev_vulkan_destroydescriptorpool(VkDescriptorPool *pool);
 
 void ev_vulkan_allocatedescriptor(VkDescriptorSetAllocateInfo *info, VkDescriptorSet *set);
 
-
+VkCommandBuffer ev_vulkan_offscreencommandbuffer();
 void ev_vulkan_allocateubo(unsigned long long bufferSize, bool persistentMap, UBO *ubo);
 void ev_vulkan_updateubo(unsigned long long bufferSize, const void *data, UBO *ubo);
 void ev_vulkan_freeubo(UBO *ubo);

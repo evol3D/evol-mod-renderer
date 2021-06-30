@@ -26,6 +26,10 @@ struct ev_Vulkan_Data {
   VkRenderPass renderPass;
   VkFramebuffer framebuffers[SWAPCHAIN_MAX_IMAGES];
 
+  FrameBuffer offscreenFrameBuffer;
+  VkSemaphore offscreensemaphore;
+  VkCommandBuffer offscreencommandbuffer;
+
   uint32_t currentSwapchainImage;
 } VulkanData;
 
@@ -75,6 +79,9 @@ int ev_vulkan_init()
   ev_vulkan_createresourcememorypool(EV_USAGEFLAGS_RESOURCE_IMAGE ,512ull * 1024 * 1024, 1, 4, &DATA(imagesPool));
 
   ev_descriptormanager_init();
+
+
+  ev_vulkan_allocateprimarycommandbuffer(GRAPHICS, &VulkanData.offscreencommandbuffer);
 
   return 0;
 }
@@ -517,6 +524,9 @@ void ev_vulkan_destroyimageview(VkImageView imageView)
 void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, uint32_t arrayElement, void *data)
 {
   VkWriteDescriptorSet setWrite;
+  VkDescriptorBufferInfo bufferInfo = {0};
+  VkDescriptorImageInfo imageinfo = {0};
+
   switch(binding->type)
   {
     case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
@@ -524,11 +534,10 @@ void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, uint32_t ar
     case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
     case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
       {
-        VkDescriptorBufferInfo bufferInfo = {
-          .buffer = ((EvBuffer*)data)->buffer,
-          .offset = 0,
-          .range = VK_WHOLE_SIZE,
-        };
+        bufferInfo.buffer = ((EvBuffer*)data)->buffer;
+        bufferInfo.offset = 0;
+        bufferInfo.range = VK_WHOLE_SIZE;
+
         setWrite = (VkWriteDescriptorSet){
           .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
           .descriptorCount = 1,
@@ -547,12 +556,10 @@ void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, uint32_t ar
     case VK_DESCRIPTOR_TYPE_SAMPLER:
     case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
       {
-        EvTexture texture = *(EvTexture*)data;
-        VkDescriptorImageInfo imageinfo = {
-          .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-          .imageView   = texture.imageView,
-          .sampler     = texture.sampler,
-        };
+        imageinfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        imageinfo.imageView   = ((EvTexture*)data)->imageView,
+        imageinfo.sampler     = ((EvTexture*)data)->sampler,
+
         setWrite = (VkWriteDescriptorSet)
         {
           .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -738,6 +745,109 @@ void ev_vulkan_destroysetlayout(VkDescriptorSetLayout descriptorSetLayout)
   vkDestroyDescriptorSetLayout(VulkanData.logicalDevice, descriptorSetLayout, NULL);
 }
 
+void ev_vulkan_createoffscreenrenderpass()
+{
+  VkAttachmentDescription attachmentDescriptions[] =
+  {
+    {
+      .format = VK_FORMAT_R8G8B8A8_SRGB,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    },
+    {
+      .format = VK_FORMAT_R16G16B16A16_SFLOAT,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    },
+    {
+      .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+    }
+  };
+
+  VkAttachmentReference colorAttachmentReferences[] =
+  {
+    {
+      .attachment = 0,
+      .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    },
+    {
+      .attachment = 1,
+      .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    },
+  };
+
+  VkAttachmentReference depthStencilAttachmentReference =
+  {
+    .attachment = 2,
+    .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+  };
+
+  VkSubpassDescription subpassDescriptions[] =
+  {
+    {
+      .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+      .inputAttachmentCount = 0,
+      .pInputAttachments = NULL,
+      .colorAttachmentCount = ARRAYSIZE(colorAttachmentReferences),
+      .pColorAttachments = colorAttachmentReferences,
+      .pResolveAttachments = NULL,
+      .pDepthStencilAttachment = &depthStencilAttachmentReference,
+      .preserveAttachmentCount = 0,
+      .pPreserveAttachments = NULL,
+    },
+  };
+
+  VkSubpassDependency dependencies[] = {
+    {
+      .srcSubpass = VK_SUBPASS_EXTERNAL,
+    	.dstSubpass = 0,
+    	.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+    	.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    	.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT,
+    	.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+    	.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+    },
+    {
+      .srcSubpass = 0,
+      .dstSubpass = VK_SUBPASS_EXTERNAL,
+      .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+      .dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+      .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+      .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT,
+      .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+    },
+  };
+
+  VkRenderPassCreateInfo renderPassCreateInfo = {
+    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+    .attachmentCount = ARRAYSIZE(attachmentDescriptions),
+    .pAttachments = attachmentDescriptions,
+    .subpassCount = ARRAYSIZE(subpassDescriptions),
+    .pSubpasses = subpassDescriptions,
+    .dependencyCount = ARRAYSIZE(dependencies),
+    .pDependencies = dependencies,
+  };
+
+  VK_ASSERT(vkCreateRenderPass(VulkanData.logicalDevice, &renderPassCreateInfo, NULL, &DATA(offscreenFrameBuffer).renderPass));
+}
+
 void ev_vulkan_createrenderpass()
 {
   VkAttachmentDescription attachmentDescriptions[] =
@@ -806,6 +916,140 @@ void ev_vulkan_createrenderpass()
   VK_ASSERT(vkCreateRenderPass(VulkanData.logicalDevice, &renderPassCreateInfo, NULL, &DATA(renderPass)));
 }
 
+void ev_vulkan_createoffscreenframebuffer()
+{
+  //depth buffer
+  {
+    VkImageCreateInfo depthImageCreateInfo = {
+      .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+      .imageType     = VK_IMAGE_TYPE_2D,
+      .format        = VK_FORMAT_R8G8B8A8_UNORM,
+      .extent        = (VkExtent3D) {
+        .width       = VulkanData.swapchain.windowExtent.width,
+        .height      = VulkanData.swapchain.windowExtent.height,
+        .depth       = 1,
+      },
+      .mipLevels     = 1,
+      .arrayLayers   = 1,
+      .samples       = VK_SAMPLE_COUNT_1_BIT,
+      .tiling        = VK_IMAGE_TILING_OPTIMAL,
+      .usage         = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VmaAllocationCreateInfo vmaAllocationCreateInfo = {
+      .usage = VMA_MEMORY_USAGE_GPU_ONLY,
+    };
+
+    ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &VulkanData.offscreenFrameBuffer.albedo.evImage);
+
+    VkImageViewCreateInfo depthImageViewCreateInfo = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+      .image = VulkanData.offscreenFrameBuffer.albedo.evImage.image,
+      .viewType = VK_IMAGE_VIEW_TYPE_2D,
+      .format = VK_FORMAT_R8G8B8A8_UNORM,
+      .components = {0, 0, 0, 0},
+      .subresourceRange = (VkImageSubresourceRange) {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+      }
+    };
+    vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &VulkanData.offscreenFrameBuffer.albedo.view);
+  }
+
+  {
+    VkImageCreateInfo depthImageCreateInfo = {
+      .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+      .imageType     = VK_IMAGE_TYPE_2D,
+      .format        = VK_FORMAT_R8G8B8A8_SRGB,
+      .extent        = (VkExtent3D) {
+        .width       = VulkanData.swapchain.windowExtent.width,
+        .height      = VulkanData.swapchain.windowExtent.height,
+        .depth       = 1,
+      },
+      .mipLevels     = 1,
+      .arrayLayers   = 1,
+      .samples       = VK_SAMPLE_COUNT_1_BIT,
+      .tiling        = VK_IMAGE_TILING_OPTIMAL,
+      .usage         = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VmaAllocationCreateInfo vmaAllocationCreateInfo = {
+      .usage = VMA_MEMORY_USAGE_GPU_ONLY,
+    };
+
+    ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &VulkanData.offscreenFrameBuffer.normal.evImage);
+
+    VkImageViewCreateInfo depthImageViewCreateInfo = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+      .image = VulkanData.offscreenFrameBuffer.normal.evImage.image,
+      .viewType = VK_IMAGE_VIEW_TYPE_2D,
+      .format = VK_FORMAT_R16G16B16A16_SFLOAT,
+      .components = {0, 0, 0, 0},
+      .subresourceRange = (VkImageSubresourceRange) {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+      }
+    };
+    vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &VulkanData.offscreenFrameBuffer.normal.view);
+  }
+
+  //depth buffer
+  {
+    VkImageCreateInfo depthImageCreateInfo = {
+      .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+      .imageType     = VK_IMAGE_TYPE_2D,
+      .format        = VK_FORMAT_D32_SFLOAT_S8_UINT,
+      .extent        = (VkExtent3D) {
+        .width       = VulkanData.swapchain.windowExtent.width,
+        .height      = VulkanData.swapchain.windowExtent.height,
+        .depth       = 1,
+      },
+      .mipLevels     = 1,
+      .arrayLayers   = 1,
+      .samples       = VK_SAMPLE_COUNT_1_BIT,
+      .tiling        = VK_IMAGE_TILING_OPTIMAL,
+      .usage         = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VmaAllocationCreateInfo vmaAllocationCreateInfo = {
+      .usage = VMA_MEMORY_USAGE_GPU_ONLY,
+    };
+
+    ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &VulkanData.offscreenFrameBuffer.depth.evImage);
+
+    VkImageViewCreateInfo depthImageViewCreateInfo = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+      .image = VulkanData.offscreenFrameBuffer.depth.evImage.image,
+      .viewType = VK_IMAGE_VIEW_TYPE_2D,
+      .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
+      .components = {0, 0, 0, 0},
+      .subresourceRange = (VkImageSubresourceRange) {
+        .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+      }
+    };
+    vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &VulkanData.offscreenFrameBuffer.depth.view);
+  }
+
+  VkImageView attachments[] =
+  {
+    VulkanData.offscreenFrameBuffer.albedo.view,
+    VulkanData.offscreenFrameBuffer.normal.view,
+    VulkanData.offscreenFrameBuffer.depth.view,
+  };
+
+  ev_vulkan_createframebuffer(attachments, ARRAYSIZE(attachments), VulkanData.offscreenFrameBuffer.renderPass, DATA(swapchain.windowExtent), &DATA(offscreenFrameBuffer).frameBuffer);
+}
+
 void ev_vulkan_createframebuffers()
 {
   for(size_t i = 0; i < DATA(swapchain).imageCount; ++i)
@@ -831,6 +1075,67 @@ void ev_vulkan_destroyframebuffer()
 void ev_vulkan_destroyrenderpass()
 {
   vkDestroyRenderPass(VulkanData.logicalDevice, DATA(renderPass), NULL);
+}
+
+VkCommandBuffer ev_vulkan_offscreencommandbuffer()
+{
+  VK_ASSERT(vkResetCommandBuffer(DATA(offscreencommandbuffer), 0));
+
+  VkCommandBufferBeginInfo cmdBeginInfo = {
+    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+    .pNext = NULL,
+
+    .pInheritanceInfo = NULL,
+    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+  };
+  VK_ASSERT(vkBeginCommandBuffer(DATA(offscreencommandbuffer), &cmdBeginInfo));
+
+  VkClearValue clearValues[] =
+  {
+    {
+      .color = { {0.13f, 0.22f, 0.37f, 1.f} },
+    },
+    {
+      .depthStencil = {1.0f, 0.0f},
+    }
+  };
+
+  VkRenderPassBeginInfo rpInfo = {
+    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+    .pNext = NULL,
+
+    .renderPass = DATA(renderPass),
+    .renderArea.offset.x = 0,
+    .renderArea.offset.y = 0,
+    .renderArea.extent.width = DATA(swapchain.windowExtent.width),
+    .renderArea.extent.height = DATA(swapchain.windowExtent.height),
+    .framebuffer = VulkanData.offscreenFrameBuffer.frameBuffer,
+
+    .clearValueCount = ARRAYSIZE(clearValues),
+    .pClearValues = &clearValues,
+  };
+  vkCmdBeginRenderPass(DATA(offscreencommandbuffer), &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+  {
+    VkRect2D scissor = {
+      .offset = {0, 0},
+      .extent = DATA(swapchain.windowExtent),
+    };
+
+    VkViewport viewport =
+    {
+      .x = 0,
+      .y = DATA(swapchain.windowExtent.height),
+      .width = DATA(swapchain.windowExtent.width),
+      .height = -(float) DATA(swapchain.windowExtent.height),
+      .minDepth = 0.0f,
+      .maxDepth = 1.0f,
+    };
+    vkCmdSetScissor(DATA(offscreencommandbuffer), 0, 1, &scissor);
+    vkCmdSetViewport(DATA(offscreencommandbuffer), 0, 1, &viewport);
+  }
+
+  return DATA(offscreencommandbuffer);
 }
 
 VkCommandBuffer ev_vulkan_startframe()
@@ -1020,7 +1325,7 @@ void ev_vulkan_endframe(VkCommandBuffer cmd)
 
 VkRenderPass ev_vulkan_getrenderpass()
 {
-  return DATA(renderPass);
+  return DATA(offscreenFrameBuffer).renderPass;
 }
 
 void ev_vulkan_allocateimageinpool(VmaPool pool, uint32_t width, uint32_t height, unsigned long long usageFlags, EvImage *image)
