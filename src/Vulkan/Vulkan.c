@@ -156,11 +156,13 @@ void ev_vulkan_createinstance()
     #endif
   };
 
+#if defined(EV_BUILD_DEBUG)
   const char *validation_layers[] = {
     "VK_LAYER_KHRONOS_validation",
     //"VK_LAYER_LUNARG_monitor",
     // "VK_LAYER_LUNARG_api_dump",
   };
+#endif
 
   VkApplicationInfo applicationInfo = {
     .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -172,8 +174,13 @@ void ev_vulkan_createinstance()
   VkInstanceCreateInfo instanceCreateInfo = {
     .sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
     .pApplicationInfo        = &applicationInfo,
+#if defined(EV_BUILD_DEBUG)
     .enabledLayerCount       = ARRAYSIZE(validation_layers),
     .ppEnabledLayerNames     = validation_layers,
+#else
+    .enabledLayerCount       = 0,
+    .ppEnabledLayerNames     = NULL,
+#endif
     .enabledExtensionCount   = ARRAYSIZE(extensions),
     .ppEnabledExtensionNames = extensions
   };
