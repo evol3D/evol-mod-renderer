@@ -67,7 +67,7 @@ void ev_swapchain_create(EvSwapchain *Swapchain, VkSurfaceKHR *surface)
   //get this from config vars //double-buff or triple-buff
   //TODO: Actually detect the format
   Swapchain->imageCount = 3;
-  Swapchain->surfaceFormat.format = VK_FORMAT_B8G8R8A8_UNORM;
+  Swapchain->surfaceFormat.format = VK_FORMAT_B8G8R8A8_SRGB;
   Swapchain->surfaceFormat.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
 
   //depth buffer
