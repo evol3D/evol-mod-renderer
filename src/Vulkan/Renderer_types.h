@@ -109,13 +109,5 @@ typedef struct {
   vec(DescriptorSet) pSets;
 } Pipeline;
 
-typedef struct {
-  Vec4 baseColor;
-  uint32_t albedoTexture;
-
-  uint32_t normalTexture;
-
-  float metallicFactor;
-  float roughnessFactor;
-  uint32_t metallicRoughnessTexture;
-} Material;
+#include "../glsl/types.glsl"
+typedef struct Material Material;
