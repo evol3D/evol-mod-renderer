@@ -27,10 +27,10 @@ struct ev_Vulkan_Data {
   VkFramebuffer framebuffers[SWAPCHAIN_MAX_IMAGES];
 
   FrameBuffer offscreenFrameBuffer;
-  VkSemaphore offscreensemaphore;
-  VkCommandBuffer offscreencommandbuffer;
+  VkCommandBuffer offscreencommandbuffer[SWAPCHAIN_MAX_IMAGES];
+  VkSemaphore offscreenrendersemaphore[SWAPCHAIN_MAX_IMAGES];
 
-  uint32_t currentSwapchainImage;
+  uint32_t swapchainImageIndex;
 } VulkanData;
 
 #define DATA(X) VulkanData.X
@@ -80,8 +80,13 @@ int ev_vulkan_init()
 
   ev_descriptormanager_init();
 
-
-  ev_vulkan_allocateprimarycommandbuffer(GRAPHICS, &VulkanData.offscreencommandbuffer);
+  VkSemaphoreCreateInfo semaphoreCreateInfo = {
+    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+  };
+  for (size_t i = 0; i < SWAPCHAIN_MAX_IMAGES; i++) {
+    ev_vulkan_allocateprimarycommandbuffer(GRAPHICS, &VulkanData.offscreencommandbuffer[i]);
+    VK_ASSERT(vkCreateSemaphore(ev_vulkan_getlogicaldevice(), &semaphoreCreateInfo, NULL, &VulkanData.offscreenrendersemaphore[i]));
+  }
 
   return 0;
 }
@@ -246,7 +251,7 @@ void ev_vulkan_createlogicaldevice()
 
 void ev_vulkan_wait()
 {
-  vkWaitForFences(ev_vulkan_getlogicaldevice(), DATA(swapchain).imageCount, DATA(swapchain).frameSubmissionFences, VK_TRUE, ~0ull);
+  vkWaitForFences(ev_vulkan_getlogicaldevice(), DATA(swapchain).imageCount, DATA(swapchain).renderFences, VK_TRUE, ~0ull);
 }
 
 EvSwapchain* ev_vulkan_getSwapchain()
@@ -749,16 +754,7 @@ void ev_vulkan_createoffscreenrenderpass()
 {
   VkAttachmentDescription attachmentDescriptions[] =
   {
-    {
-      .format = VK_FORMAT_R8G8B8A8_SRGB,
-      .samples = VK_SAMPLE_COUNT_1_BIT,
-      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-      .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-      .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-    },
+    //position
     {
       .format = VK_FORMAT_R16G16B16A16_SFLOAT,
       .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -769,6 +765,40 @@ void ev_vulkan_createoffscreenrenderpass()
       .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
       .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     },
+    //normal
+    {
+      .format = VK_FORMAT_R16G16B16A16_SFLOAT,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    },
+    //albedo
+    {
+      .format = VK_FORMAT_R8G8B8A8_UNORM,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    },
+    //specular
+    {
+      .format = VK_FORMAT_R8G8B8A8_UNORM,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    },
+    //depth
     {
       .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
       .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -778,24 +808,36 @@ void ev_vulkan_createoffscreenrenderpass()
       .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
       .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
       .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-    }
+    },
   };
 
   VkAttachmentReference colorAttachmentReferences[] =
   {
+    //position
     {
       .attachment = 0,
       .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     },
+    //normal
     {
       .attachment = 1,
+      .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    },
+    //albed
+    {
+      .attachment = 2,
+      .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    },
+    //specular
+    {
+      .attachment = 3,
       .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     },
   };
 
   VkAttachmentReference depthStencilAttachmentReference =
   {
-    .attachment = 2,
+    .attachment = 4,
     .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
   };
 
@@ -852,6 +894,7 @@ void ev_vulkan_createrenderpass()
 {
   VkAttachmentDescription attachmentDescriptions[] =
   {
+    //albedo
     {
       .format = DATA(swapchain).surfaceFormat.format,
       .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -862,6 +905,7 @@ void ev_vulkan_createrenderpass()
       .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
       .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     },
+    //depth
     {
       .format = DATA(swapchain).depthStencilFormat,
       .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -876,6 +920,7 @@ void ev_vulkan_createrenderpass()
 
   VkAttachmentReference colorAttachmentReferences[] =
   {
+    //albedo
     {
       .attachment = 0,
       .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -918,12 +963,12 @@ void ev_vulkan_createrenderpass()
 
 void ev_vulkan_createoffscreenframebuffer()
 {
-  //depth buffer
+  //position texture
   {
     VkImageCreateInfo depthImageCreateInfo = {
       .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
       .imageType     = VK_IMAGE_TYPE_2D,
-      .format        = VK_FORMAT_R8G8B8A8_UNORM,
+      .format        = VK_FORMAT_R16G16B16A16_SFLOAT,
       .extent        = (VkExtent3D) {
         .width       = VulkanData.swapchain.windowExtent.width,
         .height      = VulkanData.swapchain.windowExtent.height,
@@ -940,13 +985,13 @@ void ev_vulkan_createoffscreenframebuffer()
       .usage = VMA_MEMORY_USAGE_GPU_ONLY,
     };
 
-    ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &VulkanData.offscreenFrameBuffer.albedo.evImage);
+    ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &VulkanData.offscreenFrameBuffer.position.texture.image);
 
     VkImageViewCreateInfo depthImageViewCreateInfo = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-      .image = VulkanData.offscreenFrameBuffer.albedo.evImage.image,
+      .image = VulkanData.offscreenFrameBuffer.position.texture.image.image,
       .viewType = VK_IMAGE_VIEW_TYPE_2D,
-      .format = VK_FORMAT_R8G8B8A8_UNORM,
+      .format = VK_FORMAT_R16G16B16A16_SFLOAT,
       .components = {0, 0, 0, 0},
       .subresourceRange = (VkImageSubresourceRange) {
         .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -956,9 +1001,93 @@ void ev_vulkan_createoffscreenframebuffer()
         .layerCount = 1,
       }
     };
-    vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &VulkanData.offscreenFrameBuffer.albedo.view);
+    vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &VulkanData.offscreenFrameBuffer.position.texture.imageView);
+
+    VkSamplerCreateInfo samplerInfo =
+    {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .anisotropyEnable = VK_FALSE,
+        .maxAnisotropy = 1.0f,
+        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = VK_FALSE,
+        .compareEnable = VK_FALSE,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .mipLodBias = 0.0f,
+        .minLod = 0.0f,
+        .maxLod = 0.0f,
+    };
+    vkCreateSampler(VulkanData.logicalDevice, &samplerInfo, NULL, &VulkanData.offscreenFrameBuffer.position.texture.sampler);
   }
 
+  //normal image and image view
+  {
+    VkImageCreateInfo depthImageCreateInfo = {
+      .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+      .imageType     = VK_IMAGE_TYPE_2D,
+      .format        = VK_FORMAT_R16G16B16A16_SFLOAT,
+      .extent        = (VkExtent3D) {
+        .width       = VulkanData.swapchain.windowExtent.width,
+        .height      = VulkanData.swapchain.windowExtent.height,
+        .depth       = 1,
+      },
+      .mipLevels     = 1,
+      .arrayLayers   = 1,
+      .samples       = VK_SAMPLE_COUNT_1_BIT,
+      .tiling        = VK_IMAGE_TILING_OPTIMAL,
+      .usage         = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VmaAllocationCreateInfo vmaAllocationCreateInfo = {
+      .usage = VMA_MEMORY_USAGE_GPU_ONLY,
+    };
+
+    ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &VulkanData.offscreenFrameBuffer.normal.texture.image);
+
+    VkImageViewCreateInfo depthImageViewCreateInfo = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+      .image = VulkanData.offscreenFrameBuffer.normal.texture.image.image,
+      .viewType = VK_IMAGE_VIEW_TYPE_2D,
+      .format = VK_FORMAT_R16G16B16A16_SFLOAT,
+      .components = {0, 0, 0, 0},
+      .subresourceRange = (VkImageSubresourceRange) {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+      }
+    };
+    vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &VulkanData.offscreenFrameBuffer.normal.texture.imageView);
+
+    VkSamplerCreateInfo samplerInfo =
+    {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .anisotropyEnable = VK_FALSE,
+        .maxAnisotropy = 1.0f,
+        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = VK_FALSE,
+        .compareEnable = VK_FALSE,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .mipLodBias = 0.0f,
+        .minLod = 0.0f,
+        .maxLod = 0.0f,
+    };
+    vkCreateSampler(VulkanData.logicalDevice, &samplerInfo, NULL, &VulkanData.offscreenFrameBuffer.normal.texture.sampler);
+  }
+
+  //albedo image and image view and sampler
   {
     VkImageCreateInfo depthImageCreateInfo = {
       .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -980,13 +1109,13 @@ void ev_vulkan_createoffscreenframebuffer()
       .usage = VMA_MEMORY_USAGE_GPU_ONLY,
     };
 
-    ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &VulkanData.offscreenFrameBuffer.normal.evImage);
+    ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &VulkanData.offscreenFrameBuffer.albedo.texture.image);
 
     VkImageViewCreateInfo depthImageViewCreateInfo = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-      .image = VulkanData.offscreenFrameBuffer.normal.evImage.image,
+      .image = VulkanData.offscreenFrameBuffer.albedo.texture.image.image,
       .viewType = VK_IMAGE_VIEW_TYPE_2D,
-      .format = VK_FORMAT_R16G16B16A16_SFLOAT,
+      .format = VK_FORMAT_R8G8B8A8_SRGB,
       .components = {0, 0, 0, 0},
       .subresourceRange = (VkImageSubresourceRange) {
         .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -996,10 +1125,93 @@ void ev_vulkan_createoffscreenframebuffer()
         .layerCount = 1,
       }
     };
-    vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &VulkanData.offscreenFrameBuffer.normal.view);
+    vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &VulkanData.offscreenFrameBuffer.albedo.texture.imageView);
+
+    VkSamplerCreateInfo samplerInfo =
+    {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .anisotropyEnable = VK_FALSE,
+        .maxAnisotropy = 1.0f,
+        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = VK_FALSE,
+        .compareEnable = VK_FALSE,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .mipLodBias = 0.0f,
+        .minLod = 0.0f,
+        .maxLod = 0.0f,
+    };
+    vkCreateSampler(VulkanData.logicalDevice, &samplerInfo, NULL, &VulkanData.offscreenFrameBuffer.albedo.texture.sampler);
   }
 
-  //depth buffer
+  //specular image and image view and sampler
+  {
+    VkImageCreateInfo depthImageCreateInfo = {
+      .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+      .imageType     = VK_IMAGE_TYPE_2D,
+      .format        = VK_FORMAT_R8G8B8A8_SRGB,
+      .extent        = (VkExtent3D) {
+        .width       = VulkanData.swapchain.windowExtent.width,
+        .height      = VulkanData.swapchain.windowExtent.height,
+        .depth       = 1,
+      },
+      .mipLevels     = 1,
+      .arrayLayers   = 1,
+      .samples       = VK_SAMPLE_COUNT_1_BIT,
+      .tiling        = VK_IMAGE_TILING_OPTIMAL,
+      .usage         = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VmaAllocationCreateInfo vmaAllocationCreateInfo = {
+      .usage = VMA_MEMORY_USAGE_GPU_ONLY,
+    };
+
+    ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &VulkanData.offscreenFrameBuffer.specular.texture.image);
+
+    VkImageViewCreateInfo depthImageViewCreateInfo = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+      .image = VulkanData.offscreenFrameBuffer.specular.texture.image.image,
+      .viewType = VK_IMAGE_VIEW_TYPE_2D,
+      .format = VK_FORMAT_R8G8B8A8_SRGB,
+      .components = {0, 0, 0, 0},
+      .subresourceRange = (VkImageSubresourceRange) {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+      }
+    };
+    vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &VulkanData.offscreenFrameBuffer.specular.texture.imageView);
+
+    VkSamplerCreateInfo samplerInfo =
+    {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .anisotropyEnable = VK_FALSE,
+        .maxAnisotropy = 1.0f,
+        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = VK_FALSE,
+        .compareEnable = VK_FALSE,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .mipLodBias = 0.0f,
+        .minLod = 0.0f,
+        .maxLod = 0.0f,
+    };
+    vkCreateSampler(VulkanData.logicalDevice, &samplerInfo, NULL, &VulkanData.offscreenFrameBuffer.specular.texture.sampler);
+  }
+
+  //depth image and image view
   {
     VkImageCreateInfo depthImageCreateInfo = {
       .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -1021,11 +1233,11 @@ void ev_vulkan_createoffscreenframebuffer()
       .usage = VMA_MEMORY_USAGE_GPU_ONLY,
     };
 
-    ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &VulkanData.offscreenFrameBuffer.depth.evImage);
+    ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &VulkanData.offscreenFrameBuffer.depth.texture.image);
 
     VkImageViewCreateInfo depthImageViewCreateInfo = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-      .image = VulkanData.offscreenFrameBuffer.depth.evImage.image,
+      .image = VulkanData.offscreenFrameBuffer.depth.texture.image.image,
       .viewType = VK_IMAGE_VIEW_TYPE_2D,
       .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
       .components = {0, 0, 0, 0},
@@ -1037,14 +1249,16 @@ void ev_vulkan_createoffscreenframebuffer()
         .layerCount = 1,
       }
     };
-    vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &VulkanData.offscreenFrameBuffer.depth.view);
+    vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &VulkanData.offscreenFrameBuffer.depth.texture.imageView);
   }
 
   VkImageView attachments[] =
   {
-    VulkanData.offscreenFrameBuffer.albedo.view,
-    VulkanData.offscreenFrameBuffer.normal.view,
-    VulkanData.offscreenFrameBuffer.depth.view,
+    VulkanData.offscreenFrameBuffer.position.texture.imageView,
+    VulkanData.offscreenFrameBuffer.normal.texture.imageView,
+    VulkanData.offscreenFrameBuffer.albedo.texture.imageView,
+    VulkanData.offscreenFrameBuffer.specular.texture.imageView,
+    VulkanData.offscreenFrameBuffer.depth.texture.imageView,
   };
 
   ev_vulkan_createframebuffer(attachments, ARRAYSIZE(attachments), VulkanData.offscreenFrameBuffer.renderPass, DATA(swapchain.windowExtent), &DATA(offscreenFrameBuffer).frameBuffer);
@@ -1077,9 +1291,12 @@ void ev_vulkan_destroyrenderpass()
   vkDestroyRenderPass(VulkanData.logicalDevice, DATA(renderPass), NULL);
 }
 
-VkCommandBuffer ev_vulkan_offscreencommandbuffer()
+VkCommandBuffer ev_vulkan_startframeoffscreen(uint32_t frameNumber)
 {
-  VK_ASSERT(vkResetCommandBuffer(DATA(offscreencommandbuffer), 0));
+  VK_ASSERT(vkWaitForFences(ev_vulkan_getlogicaldevice(), 1, &DATA(swapchain).renderFences[frameNumber], true, ~0ull));
+  VK_ASSERT(vkResetFences(ev_vulkan_getlogicaldevice(), 1, &DATA(swapchain).renderFences[frameNumber]));
+
+  VK_ASSERT(vkResetCommandBuffer(DATA(offscreencommandbuffer[frameNumber]), 0));
 
   VkCommandBufferBeginInfo cmdBeginInfo = {
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -1088,7 +1305,132 @@ VkCommandBuffer ev_vulkan_offscreencommandbuffer()
     .pInheritanceInfo = NULL,
     .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
   };
-  VK_ASSERT(vkBeginCommandBuffer(DATA(offscreencommandbuffer), &cmdBeginInfo));
+  VK_ASSERT(vkBeginCommandBuffer(DATA(offscreencommandbuffer[frameNumber]), &cmdBeginInfo));
+
+  VkClearValue clearValues[] =
+  {
+    {
+      .color = { {0.0f, 0.0f, 0.0f, 1.f} },
+    },
+    {
+      .color = { {0.0f, 0.0f, 0.0f, 1.f} },
+    },
+    {
+      .color = { {0.0f, 0.0f, 0.0f, 1.f} },
+    },
+    {
+      .color = { {0.0f, 0.0f, 0.0f, 1.f} },
+    },
+    {
+      .depthStencil = {1.0f, 0.0f},
+    }
+  };
+
+  VkRenderPassBeginInfo rpInfo = {
+    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+    .pNext = NULL,
+
+    .renderPass = DATA(offscreenFrameBuffer).renderPass,
+    .renderArea.offset.x = 0,
+    .renderArea.offset.y = 0,
+    .renderArea.extent.width = DATA(swapchain.windowExtent.width),
+    .renderArea.extent.height = DATA(swapchain.windowExtent.height),
+    .framebuffer = VulkanData.offscreenFrameBuffer.frameBuffer,
+
+    .clearValueCount = ARRAYSIZE(clearValues),
+    .pClearValues = &clearValues,
+  };
+  vkCmdBeginRenderPass(DATA(offscreencommandbuffer[frameNumber]), &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+  {
+    VkRect2D scissor = {
+      .offset = {0, 0},
+      .extent = DATA(swapchain.windowExtent),
+    };
+
+    VkViewport viewport =
+    {
+      .x = 0,
+      .y = DATA(swapchain.windowExtent.height),
+      .width = DATA(swapchain.windowExtent.width),
+      .height = -(float) DATA(swapchain.windowExtent.height),
+      .minDepth = 0.0f,
+      .maxDepth = 1.0f,
+    };
+    vkCmdSetScissor(DATA(offscreencommandbuffer[frameNumber]), 0, 1, &scissor);
+    vkCmdSetViewport(DATA(offscreencommandbuffer[frameNumber]), 0, 1, &viewport);
+  }
+
+  return DATA(offscreencommandbuffer[frameNumber]);
+}
+
+void ev_vulkan_endframeoffscreen(VkCommandBuffer cmd, uint32_t frameNumber)
+{
+  vkCmdEndRenderPass(cmd);
+  VK_ASSERT(vkEndCommandBuffer(cmd));
+  VkSubmitInfo submit = {
+    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+    .pNext = NULL,
+  };
+
+  VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+  submit.pWaitDstStageMask = &waitStage;
+
+  submit.signalSemaphoreCount = 1;
+  submit.pSignalSemaphores = &DATA(offscreenrendersemaphore)[frameNumber];
+
+  submit.commandBufferCount = 1;
+  submit.pCommandBuffers = &cmd;
+
+  VK_ASSERT(vkQueueSubmit(VulkanQueueManager.getQueue(GRAPHICS), 1, &submit, VK_NULL_HANDLE));
+}
+
+VkCommandBuffer ev_vulkan_startframe(uint32_t frameNumber)
+{
+  VK_ASSERT(vkResetCommandBuffer(DATA(swapchain).commandBuffers[frameNumber], 0));
+
+  VkResult result = vkAcquireNextImageKHR(ev_vulkan_getlogicaldevice(), DATA(swapchain).swapchain, 1000000000, DATA(swapchain).presentSemaphores[frameNumber], NULL, &DATA(swapchainImageIndex));
+  if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+    ev_vulkan_recreateSwapChain();
+    return;
+  } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+    ev_log_debug("failed to acquire swap chain image!");
+  }
+
+  VkCommandBuffer cmd = DATA(swapchain).commandBuffers[frameNumber];
+
+  VkCommandBufferBeginInfo cmdBeginInfo = {
+    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+    .pNext = NULL,
+
+    .pInheritanceInfo = NULL,
+    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+  };
+  VK_ASSERT(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+
+  VkImageMemoryBarrier imageMemoryBarrier =
+  {
+    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+    .pNext = NULL,
+    .srcAccessMask = 0,
+    .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+    .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
+    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
+    .image = DATA(swapchain).images[frameNumber],
+    .subresourceRange =
+    {
+      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .levelCount = VK_REMAINING_MIP_LEVELS,
+      .layerCount = VK_REMAINING_ARRAY_LAYERS,
+    }
+  };
+
+  vkCmdPipelineBarrier(cmd,
+    VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    VK_DEPENDENCY_BY_REGION_BIT, 0, NULL, 0, NULL, 1, &imageMemoryBarrier);
 
   VkClearValue clearValues[] =
   {
@@ -1109,12 +1451,13 @@ VkCommandBuffer ev_vulkan_offscreencommandbuffer()
     .renderArea.offset.y = 0,
     .renderArea.extent.width = DATA(swapchain.windowExtent.width),
     .renderArea.extent.height = DATA(swapchain.windowExtent.height),
-    .framebuffer = VulkanData.offscreenFrameBuffer.frameBuffer,
+    .framebuffer = DATA(framebuffers[DATA(swapchainImageIndex)]),
 
     .clearValueCount = ARRAYSIZE(clearValues),
     .pClearValues = &clearValues,
   };
-  vkCmdBeginRenderPass(DATA(offscreencommandbuffer), &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+  vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
   {
     VkRect2D scissor = {
@@ -1131,120 +1474,14 @@ VkCommandBuffer ev_vulkan_offscreencommandbuffer()
       .minDepth = 0.0f,
       .maxDepth = 1.0f,
     };
-    vkCmdSetScissor(DATA(offscreencommandbuffer), 0, 1, &scissor);
-    vkCmdSetViewport(DATA(offscreencommandbuffer), 0, 1, &viewport);
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
   }
 
-  return DATA(offscreencommandbuffer);
+  return cmd;
 }
 
-VkCommandBuffer ev_vulkan_startframe()
-{
-  VkResult result = vkAcquireNextImageKHR(ev_vulkan_getlogicaldevice(), DATA(swapchain).swapchain, 1000000000, DATA(swapchain).presentSemaphore, NULL, &DATA(currentSwapchainImage));
-  if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-    ev_vulkan_recreateSwapChain();
-    return;
-  } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-    ev_log_debug("failed to acquire swap chain image!");
-  }
-
-  VK_ASSERT(vkWaitForFences(ev_vulkan_getlogicaldevice(), 1, &DATA(swapchain).frameSubmissionFences[DATA(currentSwapchainImage)], true, ~0ull));
-  VK_ASSERT(vkResetFences(ev_vulkan_getlogicaldevice(), 1, &DATA(swapchain).frameSubmissionFences[DATA(currentSwapchainImage)]));
-  //request image from the swapchain, one second timeout
-
-  //now that we are sure tvoid ev_renderer_registerMaterial()hat the commands finished executing, we can safely reset the command buffer to begin recording again.
-  VK_ASSERT(vkResetCommandBuffer(DATA(swapchain).commandBuffers[DATA(currentSwapchainImage)], 0));
-
-  //naming it cmd for shorter writing
-  VkCommandBuffer cmd = DATA(swapchain).commandBuffers[DATA(currentSwapchainImage)];
-
-  //begin the command buffer recording. We will use this command buffer exactly once, so we want to let Vulkan know that
-  VkCommandBufferBeginInfo cmdBeginInfo = {
-    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-    .pNext = NULL,
-
-    .pInheritanceInfo = NULL,
-    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-  };
-  VK_ASSERT(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
-
-  VkImageMemoryBarrier imageMemoryBarrier =
-  {
-    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-    .pNext = NULL,
-    .srcAccessMask = 0,
-    .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-    .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-    .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
-    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
-    .image = DATA(swapchain).images[DATA(currentSwapchainImage)],
-    .subresourceRange =
-    {
-      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-      .levelCount = VK_REMAINING_MIP_LEVELS,
-      .layerCount = VK_REMAINING_ARRAY_LAYERS,
-    }
-  };
-
-  vkCmdPipelineBarrier(cmd,
-    VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-    VK_DEPENDENCY_BY_REGION_BIT, 0, NULL, 0, NULL, 1, &imageMemoryBarrier);
-
-    VkClearValue clearValues[] =
-    {
-      {
-        .color = { {0.13f, 0.22f, 0.37f, 1.f} },
-      },
-      {
-        .depthStencil = {1.0f, 0.0f},
-      }
-    };
-
-    //start the main renderpass.
-    //We will use the clear color from above, and the framebuffer of the index the swapchain gave us
-    VkRenderPassBeginInfo rpInfo = {
-      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-      .pNext = NULL,
-
-      .renderPass = DATA(renderPass),
-      .renderArea.offset.x = 0,
-      .renderArea.offset.y = 0,
-      .renderArea.extent.width = DATA(swapchain.windowExtent.width),
-      .renderArea.extent.height = DATA(swapchain.windowExtent.height),
-      .framebuffer = DATA(framebuffers[DATA(currentSwapchainImage)]),
-
-      //connect clear values
-      .clearValueCount = ARRAYSIZE(clearValues),
-      .pClearValues = &clearValues,
-    };
-
-    vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-    //DO Something
-    {
-      VkRect2D scissor = {
-        .offset = {0, 0},
-        .extent = DATA(swapchain.windowExtent),
-      };
-
-      VkViewport viewport =
-      {
-        .x = 0,
-        .y = DATA(swapchain.windowExtent.height),
-        .width = DATA(swapchain.windowExtent.width),
-        .height = -(float) DATA(swapchain.windowExtent.height),
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f,
-      };
-      vkCmdSetScissor(cmd, 0, 1, &scissor);
-      vkCmdSetViewport(cmd, 0, 1, &viewport);
-    }
-
-    return cmd;
-}
-
-void ev_vulkan_endframe(VkCommandBuffer cmd)
+void ev_vulkan_endframe(VkCommandBuffer cmd, uint32_t frameNumber)
 {
   vkCmdEndRenderPass(cmd);
 
@@ -1258,7 +1495,7 @@ void ev_vulkan_endframe(VkCommandBuffer cmd)
     .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
-    .image = DATA(swapchain).images[DATA(currentSwapchainImage)],
+    .image = DATA(swapchain).images[frameNumber],
     .subresourceRange =
     {
       .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -1274,33 +1511,40 @@ void ev_vulkan_endframe(VkCommandBuffer cmd)
   VK_ASSERT(vkEndCommandBuffer(cmd));
 
   //prepare the submission to the queue.
-  //we want to wait on the _presentSemaphore, as that semaphore is signaled when the swapchain is ready
-  //we will signal the _renderSemaphore, to signal that rendering has finished
+  //we want to wait on the _presentSemaphores, as that semaphore is signaled when the swapchain is ready
+  //we will signal the _renderSemaphores, to signal that rendering has finished
 
   VkSubmitInfo submit = {
     .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
     .pNext = NULL,
   };
 
-  VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+  VkSemaphore waitSemaphores[] = {
+    DATA(offscreenrendersemaphore)[frameNumber],
+    DATA(swapchain).presentSemaphores[frameNumber],
+  };
 
-  submit.pWaitDstStageMask = &waitStage;
+  VkPipelineStageFlags waitStages[] = {
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+  };
 
-  submit.waitSemaphoreCount = 1;
-  submit.pWaitSemaphores = &DATA(swapchain).presentSemaphore;
+  submit.waitSemaphoreCount = ARRAYSIZE(waitStages);
+  submit.pWaitDstStageMask = &waitStages;
+
+  submit.waitSemaphoreCount = ARRAYSIZE(waitSemaphores);
+  submit.pWaitSemaphores = waitSemaphores;
 
   submit.signalSemaphoreCount = 1;
-  submit.pSignalSemaphores = &DATA(swapchain).submittionSemaphore;
+  submit.pSignalSemaphores = &DATA(swapchain).renderSemaphores[frameNumber];
 
   submit.commandBufferCount = 1;
   submit.pCommandBuffers = &cmd;
 
-  //submit command buffer to the queue and execute it.
-  // _renderFence will now block until the graphic commands finish execution
-  VK_ASSERT(vkQueueSubmit(VulkanQueueManager.getQueue(GRAPHICS), 1, &submit, DATA(swapchain).frameSubmissionFences[DATA(currentSwapchainImage)]));
+  VK_ASSERT(vkQueueSubmit(VulkanQueueManager.getQueue(GRAPHICS), 1, &submit, DATA(swapchain).renderFences[frameNumber]));
 
   // this will put the image we just rendered into the visible window.
-  // we want to wait on the _renderSemaphore for that,
+  // we want to wait on the _renderSemaphores for that,
   // as it's necessary that drawing commands have finished before the image is displayed to the user
   VkPresentInfoKHR presentInfo = {
     .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -1309,10 +1553,10 @@ void ev_vulkan_endframe(VkCommandBuffer cmd)
     .pSwapchains = &DATA(swapchain).swapchain,
     .swapchainCount = 1,
 
-    .pWaitSemaphores = &DATA(swapchain).submittionSemaphore,
     .waitSemaphoreCount = 1,
+    .pWaitSemaphores = &DATA(swapchain).renderSemaphores[frameNumber],
 
-    .pImageIndices = &DATA(currentSwapchainImage),
+    .pImageIndices = &DATA(swapchainImageIndex),
   };
 
   VkResult result = vkQueuePresentKHR(VulkanQueueManager.getQueue(GRAPHICS), &presentInfo);
@@ -1325,7 +1569,17 @@ void ev_vulkan_endframe(VkCommandBuffer cmd)
 
 VkRenderPass ev_vulkan_getrenderpass()
 {
+  return DATA(renderPass);
+}
+
+VkRenderPass ev_vulkan_getoffscreenrenderpass()
+{
   return DATA(offscreenFrameBuffer).renderPass;
+}
+
+FrameBuffer *ev_vulkan_getoffscreenframebuffer()
+{
+  return &DATA(offscreenFrameBuffer);
 }
 
 void ev_vulkan_allocateimageinpool(VmaPool pool, uint32_t width, uint32_t height, unsigned long long usageFlags, EvImage *image)

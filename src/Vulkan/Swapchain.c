@@ -30,9 +30,11 @@ void ev_swapchain_createsyncstructures(EvSwapchain *Swapchain)
   VkSemaphoreCreateInfo semaphoreCreateInfo = {
     .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
   };
-
-  VK_ASSERT(vkCreateSemaphore(ev_vulkan_getlogicaldevice(), &semaphoreCreateInfo, NULL, &Swapchain->presentSemaphore));
-  VK_ASSERT(vkCreateSemaphore(ev_vulkan_getlogicaldevice(), &semaphoreCreateInfo, NULL, &Swapchain->submittionSemaphore));
+  for(size_t i = 0; i < Swapchain->imageCount; ++i)
+  {
+    VK_ASSERT(vkCreateSemaphore(ev_vulkan_getlogicaldevice(), &semaphoreCreateInfo, NULL, &Swapchain->presentSemaphores[i]));
+    VK_ASSERT(vkCreateSemaphore(ev_vulkan_getlogicaldevice(), &semaphoreCreateInfo, NULL, &Swapchain->renderSemaphores[i]));
+  }
 
   VkFenceCreateInfo fenceCreateInfo =
   {
@@ -42,17 +44,17 @@ void ev_swapchain_createsyncstructures(EvSwapchain *Swapchain)
 
   for(size_t i = 0; i < Swapchain->imageCount; ++i)
   {
-    VK_ASSERT(vkCreateFence(ev_vulkan_getlogicaldevice(), &fenceCreateInfo, NULL, &Swapchain->frameSubmissionFences[i]));
+    VK_ASSERT(vkCreateFence(ev_vulkan_getlogicaldevice(), &fenceCreateInfo, NULL, &Swapchain->renderFences[i]));
   }
 }
 void ev_swapchain_destroysyncstructures(EvSwapchain *Swapchain)
 {
-  vkDestroySemaphore(ev_vulkan_getlogicaldevice(), Swapchain->presentSemaphore, NULL);
-  vkDestroySemaphore(ev_vulkan_getlogicaldevice(), Swapchain->submittionSemaphore, NULL);
+  vkDestroySemaphore(ev_vulkan_getlogicaldevice(), Swapchain->presentSemaphores, NULL);
+  vkDestroySemaphore(ev_vulkan_getlogicaldevice(), Swapchain->renderSemaphores, NULL);
 
   for (size_t i = 0; i < Swapchain->imageCount; i++)
   {
-    vkDestroyFence(ev_vulkan_getlogicaldevice(), Swapchain->frameSubmissionFences[i], NULL);
+    vkDestroyFence(ev_vulkan_getlogicaldevice(), Swapchain->renderFences[i], NULL);
   }
 }
 

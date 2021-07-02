@@ -36,15 +36,14 @@ typedef struct
 } EvBuffer;
 
 typedef struct {
-		EvImage evImage;
+		EvTexture texture;
 		VkDeviceMemory mem;
-		VkImageView view;
 		VkFormat format;
 	} FrameBufferAttachment;
 
 	typedef struct {
 		VkFramebuffer frameBuffer;
-		FrameBufferAttachment position, normal, albedo;
+		FrameBufferAttachment position, normal, albedo, specular;
 		FrameBufferAttachment depth;
 		VkRenderPass renderPass;
 	} FrameBuffer;
@@ -76,9 +75,9 @@ typedef struct {
   VkImageView imageViews[SWAPCHAIN_MAX_IMAGES];
   VkCommandBuffer commandBuffers[SWAPCHAIN_MAX_IMAGES];
 
-  VkSemaphore presentSemaphore;
-  VkSemaphore submittionSemaphore;
-  VkFence frameSubmissionFences[SWAPCHAIN_MAX_IMAGES];
+  VkSemaphore presentSemaphores[SWAPCHAIN_MAX_IMAGES];
+  VkSemaphore renderSemaphores[SWAPCHAIN_MAX_IMAGES];
+  VkFence renderFences[SWAPCHAIN_MAX_IMAGES];
 } EvSwapchain;
 
 typedef struct
