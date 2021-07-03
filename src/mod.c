@@ -82,6 +82,7 @@ struct ev_Renderer_Data
   FrameData currentFrame;
 
   WindowHandle windowHandle;
+  bool windowResized;
 
   DescriptorSet sceneSet;
   DescriptorSet cameraSet;
@@ -108,6 +109,16 @@ struct ev_Renderer_Data
 
   uint32_t frameNumber;
 } RendererData;
+
+DECLARE_EVENT_LISTENER(WindowResizedListener, (WindowResizedEvent *event) {
+  RendererData.windowResized = true;
+
+  EvSwapchain *swapchain = ev_vulkan_getSwapchain();
+  swapchain->windowExtent.width = event->width;
+  swapchain->windowExtent.height= event->height;
+
+  ev_log_debug("width: %d, hieght: %d", swapchain->windowExtent.width, swapchain->windowExtent.height);
+})
 
 evolmodule_t game_module;
 evolmodule_t asset_module;
@@ -273,7 +284,9 @@ void ev_renderer_globalsetsdinit()
 void setWindow(WindowHandle handle)
 {
   DATA(windowHandle) = handle;
-  ev_renderer_updatewindowsize();
+
+  EvSwapchain *swapchain = ev_vulkan_getSwapchain();
+  Window->getSize(DATA(windowHandle), &swapchain->windowExtent.width, &swapchain->windowExtent.height);
 
   ev_renderer_createSurface();
   ev_vulkan_createEvswapchain(framebuffering_degree);
@@ -296,7 +309,7 @@ void draw(VkCommandBuffer cmd)
   for (size_t componentIndex = 0; componentIndex < vec_len(DATA(currentFrame).objectComponents); componentIndex++)
   {
     RenderComponent component = DATA(currentFrame).objectComponents[componentIndex];
-    ev_log_debug("mesh # %d, vertexbuffer: %d, indexbuffer: %d", componentIndex, component.mesh.vertexBufferIndex, component.mesh.indexBufferIndex);
+    // ev_log_debug("mesh # %d, vertexbuffer: %d, indexbuffer: %d", componentIndex, component.mesh.vertexBufferIndex, component.mesh.indexBufferIndex);
     Pipeline pipeline = DATA(pipelineLibrary.store[component.pipelineIndex]);
 
     MeshPushConstants pushconstant;
@@ -339,6 +352,7 @@ void ev_renderer_createSurface()
 {
   VkSurfaceKHR *surface = ev_vulkan_getSurface();
   VK_ASSERT(Window->createVulkanSurface(DATA(windowHandle), ev_vulkan_getinstance(), surface));
+
   ev_vulkan_checksurfacecompatibility();
 }
 
@@ -384,12 +398,19 @@ void run()
     DATA(textureLibrary).dirty = false;
   }
 
+  if (RendererData.windowResized)
+  {
+    ev_vulkan_recreateSwapChain();
+    RendererData.windowResized = false;
+  }
+
   VkCommandBuffer cmd = ev_vulkan_startframeoffscreen( (RendererData.frameNumber % framebuffering_degree ) );
   draw(cmd);
   ev_vulkan_endframeoffscreen(cmd, (RendererData.frameNumber % framebuffering_degree));
 
   VkCommandBuffer cmd1 = ev_vulkan_startframe((RendererData.frameNumber % framebuffering_degree));
-  if (cmd1) {
+  if (cmd1)
+  {
     vkCmdBindPipeline(cmd1, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererData.lightPipeline.pipeline);
     VkDescriptorSet ds[4];
     for (size_t i = 0; i < vec_len(RendererData.lightPipeline.pSets); i++)
@@ -399,11 +420,11 @@ void run()
     vkCmdBindDescriptorSets(cmd1, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererData.lightPipeline.pipelineLayout, 0, vec_len(RendererData.lightPipeline.pSets), ds, 0, 0);
     vkCmdDraw(cmd1, 3, 1, 0, 0);
 
-    FrameData_clear(&DATA(currentFrame));
+    ev_vulkan_endframe(cmd1, (RendererData.frameNumber % framebuffering_degree));
   }
 
-  ev_vulkan_endframe(cmd1, (RendererData.frameNumber % framebuffering_degree));
-  RendererData.frameNumber++;
+    FrameData_clear(&DATA(currentFrame));
+    RendererData.frameNumber++;
 }
 
 void ev_renderer_addFrameObjectData(RenderComponent *components, Matrix4x4 *transforms, uint32_t count)
@@ -895,6 +916,11 @@ EV_CONSTRUCTOR
 
   window_module  = evol_loadmodule("window");     DEBUG_ASSERT(window_module);
   imports(window_module, (Window));
+
+  IMPORT_EVENTS_evmod_glfw(window_module);
+
+  ACTIVATE_EVENT_LISTENER(WindowResizedListener, WindowResizedEvent);
+  RendererData.windowResized = false;
 
   FrameData_init(&DATA(currentFrame));
   RendererData.frameNumber = 0;

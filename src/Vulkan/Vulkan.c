@@ -278,8 +278,6 @@ void ev_vulkan_recreateSwapChain()
 
   ev_vulkan_destroyframebuffer();
 
-  ev_renderer_updatewindowsize();
-
   ev_swapchain_create(0 ,&DATA(swapchain), &DATA(surface));
   ev_vulkan_createframebuffers();
 }
@@ -357,7 +355,7 @@ void ev_vulkan_createswapchain(unsigned int* imageCount, VkExtent2D extent, VkSu
     .compositeAlpha   = compositeAlpha,
     .presentMode      = VK_PRESENT_MODE_MAILBOX_KHR, // TODO: Make sure that this is always supported
     .clipped          = VK_TRUE,
-    .oldSwapchain     = VK_NULL_HANDLE,
+    .oldSwapchain     = oldSwapchain,
   };
 
   VK_ASSERT(vkCreateSwapchainKHR(VulkanData.logicalDevice, &swapchainCreateInfo, NULL, swapchain));
@@ -1269,7 +1267,7 @@ void ev_vulkan_createoffscreenframebuffer()
     VulkanData.offscreenFrameBuffer.depth.texture.imageView,
   };
 
-  ev_vulkan_createframebuffer(attachments, ARRAYSIZE(attachments), VulkanData.offscreenFrameBuffer.renderPass, DATA(swapchain.windowExtent), &DATA(offscreenFrameBuffer).frameBuffer);
+  ev_vulkan_createframebuffer(attachments, ARRAYSIZE(attachments), VulkanData.offscreenFrameBuffer.renderPass, DATA(swapchain).windowExtent, &DATA(offscreenFrameBuffer).frameBuffer);
 }
 
 void ev_vulkan_createframebuffers()
@@ -1279,10 +1277,9 @@ void ev_vulkan_createframebuffers()
     VkImageView attachments[] =
     {
       DATA(swapchain).imageViews[i],
-      // DATA(swapchain).depthImageView,
     };
 
-    ev_vulkan_createframebuffer(attachments, ARRAYSIZE(attachments), VulkanData.renderPass, DATA(swapchain.windowExtent), DATA(framebuffers + i));
+    ev_vulkan_createframebuffer(attachments, ARRAYSIZE(attachments), VulkanData.renderPass, DATA(swapchain).windowExtent, DATA(framebuffers + i));
   }
 }
 
@@ -1399,6 +1396,8 @@ void ev_vulkan_endframeoffscreen(VkCommandBuffer cmd, uint32_t frameNumber)
 
   VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
+  submit.signalSemaphoreCount = 1;
+  submit.pSignalSemaphores = &DATA(offscreenrendersemaphore)[frameNumber];
   submit.pWaitDstStageMask = &waitStage;
 
   submit.signalSemaphoreCount = 1;
@@ -1414,13 +1413,7 @@ VkCommandBuffer ev_vulkan_startframe(uint32_t frameNumber)
 {
   VK_ASSERT(vkResetCommandBuffer(DATA(swapchain).commandBuffers[frameNumber], 0));
 
-  VkResult result = vkAcquireNextImageKHR(ev_vulkan_getlogicaldevice(), DATA(swapchain).swapchain, 1000000000, DATA(swapchain).presentSemaphores[frameNumber], NULL, &DATA(swapchainImageIndex));
-  if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-    ev_vulkan_recreateSwapChain();
-    return;
-  } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-    ev_log_debug("failed to acquire swap chain image!");
-  }
+  vkAcquireNextImageKHR(ev_vulkan_getlogicaldevice(), DATA(swapchain).swapchain, ~0ull, DATA(swapchain).presentSemaphores[frameNumber], NULL, &DATA(swapchainImageIndex));
 
   VkCommandBuffer cmd = DATA(swapchain).commandBuffers[frameNumber];
 
@@ -1574,12 +1567,7 @@ void ev_vulkan_endframe(VkCommandBuffer cmd, uint32_t frameNumber)
     .pImageIndices = &DATA(swapchainImageIndex),
   };
 
-  VkResult result = vkQueuePresentKHR(VulkanQueueManager.getQueue(GRAPHICS), &presentInfo);
-  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-    ev_vulkan_recreateSwapChain();
-  } else if (result != VK_SUCCESS) {
-    ev_log_debug("failed to present swap chain image!");
-  }
+  vkQueuePresentKHR(VulkanQueueManager.getQueue(GRAPHICS), &presentInfo);
 }
 
 VkRenderPass ev_vulkan_getrenderpass()
