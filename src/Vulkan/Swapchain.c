@@ -49,70 +49,72 @@ void ev_swapchain_createsyncstructures(EvSwapchain *Swapchain)
 }
 void ev_swapchain_destroysyncstructures(EvSwapchain *Swapchain)
 {
-  vkDestroySemaphore(ev_vulkan_getlogicaldevice(), Swapchain->presentSemaphores, NULL);
-  vkDestroySemaphore(ev_vulkan_getlogicaldevice(), Swapchain->renderSemaphores, NULL);
 
   for (size_t i = 0; i < Swapchain->imageCount; i++)
   {
+    vkDestroySemaphore(ev_vulkan_getlogicaldevice(), Swapchain->presentSemaphores[i], NULL);
+    vkDestroySemaphore(ev_vulkan_getlogicaldevice(), Swapchain->renderSemaphores[i], NULL);
     vkDestroyFence(ev_vulkan_getlogicaldevice(), Swapchain->renderFences[i], NULL);
   }
 }
 
-void ev_swapchain_create(EvSwapchain *Swapchain, VkSurfaceKHR *surface)
+void ev_swapchain_create(uint32_t framebuffering, EvSwapchain *Swapchain, VkSurfaceKHR *surface)
 {
   EvSwapchain oldSwapchain = *Swapchain;
   if (Swapchain->swapchain == NULL)
   {
     oldSwapchain.swapchain = VK_NULL_HANDLE;
+    Swapchain->imageCount = framebuffering;
+  }
+  else
+  {
+      Swapchain->imageCount = oldSwapchain.imageCount;
   }
 
-  //get this from config vars //double-buff or triple-buff
-  //TODO: Actually detect the format
-  Swapchain->imageCount = 3;
   Swapchain->surfaceFormat.format = VK_FORMAT_B8G8R8A8_UNORM;
   Swapchain->surfaceFormat.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
 
-  //depth buffer
-  {
-    Swapchain->depthStencilFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
-    VkImageCreateInfo depthImageCreateInfo = {
-      .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-      .imageType     = VK_IMAGE_TYPE_2D,
-      .format        = Swapchain->depthStencilFormat,
-      .extent        = (VkExtent3D) {
-        .width       = Swapchain->windowExtent.width,
-        .height      = Swapchain->windowExtent.height,
-        .depth       = 1,
-      },
-      .mipLevels     = 1,
-      .arrayLayers   = 1,
-      .samples       = VK_SAMPLE_COUNT_1_BIT,
-      .tiling        = VK_IMAGE_TILING_OPTIMAL,
-      .usage         = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-    };
-    VmaAllocationCreateInfo vmaAllocationCreateInfo = {
-      .usage = VMA_MEMORY_USAGE_GPU_ONLY,
-    };
-
-    ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &Swapchain->depthImage);
-
-    VkImageViewCreateInfo depthImageViewCreateInfo = {
-      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-      .image = Swapchain->depthImage.image,
-      .viewType = VK_IMAGE_VIEW_TYPE_2D,
-      .format = Swapchain->depthStencilFormat,
-      .components = {0, 0, 0, 0},
-      .subresourceRange = (VkImageSubresourceRange) {
-        .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
-        .baseMipLevel = 0,
-        .levelCount = 1,
-        .baseArrayLayer = 0,
-        .layerCount = 1,
-      }
-    };
-    vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &Swapchain->depthImageView);
-  }
+  // //depth buffer
+  // {
+  //   Swapchain->depthStencilFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
+  //   VkImageCreateInfo depthImageCreateInfo = {
+  //     .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+  //     .imageType     = VK_IMAGE_TYPE_2D,
+  //     .format        = Swapchain->depthStencilFormat,
+  //     .extent        = (VkExtent3D) {
+  //       .width       = Swapchain->windowExtent.width,
+  //       .height      = Swapchain->windowExtent.height,
+  //       .depth       = 1,
+  //     },
+  //     .mipLevels     = 1,
+  //     .arrayLayers   = 1,
+  //     .samples       = VK_SAMPLE_COUNT_1_BIT,
+  //     .tiling        = VK_IMAGE_TILING_OPTIMAL,
+  //     .usage         = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+  //     .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+  //   };
+  //   VmaAllocationCreateInfo vmaAllocationCreateInfo = {
+  //     .usage = VMA_MEMORY_USAGE_GPU_ONLY,
+  //   };
+  //
+  //   ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &Swapchain->depthImage);
+  //
+  //   VkImageViewCreateInfo depthImageViewCreateInfo = {
+  //     .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+  //     .image = Swapchain->depthImage.image,
+  //     .viewType = VK_IMAGE_VIEW_TYPE_2D,
+  //     .format = Swapchain->depthStencilFormat,
+  //     .components = {0, 0, 0, 0},
+  //     .subresourceRange = (VkImageSubresourceRange) {
+  //       .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+  //       .baseMipLevel = 0,
+  //       .levelCount = 1,
+  //       .baseArrayLayer = 0,
+  //       .layerCount = 1,
+  //     }
+  //   };
+  //   vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &Swapchain->depthImageView);
+  // }
 
   ev_vulkan_createswapchain(&Swapchain->imageCount, Swapchain->windowExtent, surface, &Swapchain->surfaceFormat, oldSwapchain.swapchain, &Swapchain->swapchain);
 
@@ -125,19 +127,19 @@ void ev_swapchain_create(EvSwapchain *Swapchain, VkSurfaceKHR *surface)
 
   ev_swapchain_createsyncstructures(Swapchain);
 
-  //should i destroy now the old one or wait ?
   if (oldSwapchain.swapchain != VK_NULL_HANDLE)
   {
     ev_swapchain_destroy(&oldSwapchain);
   }
 }
+
 void ev_swapchain_destroy(EvSwapchain *Swapchain)
 {
   ev_swapchain_destroysyncstructures(Swapchain);
   ev_swapchain_destroycommandbuffers(Swapchain);
 
-  ev_vulkan_destroyimage(Swapchain->depthImage);
-  ev_vulkan_destroyimageview(Swapchain->depthImageView);
+  // ev_vulkan_destroyimage(Swapchain->depthImage);
+  // ev_vulkan_destroyimageview(Swapchain->depthImageView);
 
   for (size_t i = 0; i < Swapchain->imageCount; i++)
     vkDestroyImageView(ev_vulkan_getlogicaldevice(), Swapchain->imageViews[i], NULL);

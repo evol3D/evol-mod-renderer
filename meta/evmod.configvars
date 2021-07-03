@@ -1,0 +1,1 @@
+EV_CONFIG_VAR(framebuffering_degree, I64, 1)

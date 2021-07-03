@@ -106,7 +106,7 @@ void ev_vulkan_checksurfacecompatibility();
 
 void ev_vulkan_destroysurface(VkSurfaceKHR surface);
 
-void ev_vulkan_createEvswapchain();
+void ev_vulkan_createEvswapchain(uint32_t framebuffering);
 
 void ev_vulkan_createswapchain(unsigned int* imageCount, VkExtent2D extent, VkSurfaceKHR* surface, VkSurfaceFormatKHR *surfaceFormat, VkSwapchainKHR oldSwapchain, VkSwapchainKHR* swapchain);
 
@@ -208,3 +208,4 @@ void ev_vulkan_destroytexture(EvTexture *texture);
 
 void ev_vulkan_buildlightPipeline();
 FrameBuffer *ev_vulkan_getoffscreenframebuffer();
+void ev_vulkan_destroyoffscreenframebuffer();

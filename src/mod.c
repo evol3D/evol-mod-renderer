@@ -252,11 +252,6 @@ void ev_renderer_globalsetsinit()
     VK_ASSERT(vkCreateDescriptorSetLayout(ev_vulkan_getlogicaldevice(), &resourcesdescriptorSetLayoutCreateInfo, NULL, &DATA(resourcesSet).layout));
     ev_descriptormanager_allocate(DATA(resourcesSet).layout, &DATA(resourcesSet).set);
   }
-
-  //Resources set
-  {
-
-  }
 }
 
 void ev_renderer_globalsetsdinit()
@@ -281,7 +276,7 @@ void setWindow(WindowHandle handle)
   ev_renderer_updatewindowsize();
 
   ev_renderer_createSurface();
-  ev_vulkan_createEvswapchain();
+  ev_vulkan_createEvswapchain(framebuffering_degree);
 
   ev_vulkan_createoffscreenrenderpass();
   ev_vulkan_createoffscreenframebuffer();
@@ -389,11 +384,11 @@ void run()
     DATA(textureLibrary).dirty = false;
   }
 
-  VkCommandBuffer cmd = ev_vulkan_startframeoffscreen( (RendererData.frameNumber%2) );
+  VkCommandBuffer cmd = ev_vulkan_startframeoffscreen( (RendererData.frameNumber % framebuffering_degree ) );
   draw(cmd);
-  ev_vulkan_endframeoffscreen(cmd, (RendererData.frameNumber%2));
+  ev_vulkan_endframeoffscreen(cmd, (RendererData.frameNumber % framebuffering_degree));
 
-  VkCommandBuffer cmd1 = ev_vulkan_startframe((RendererData.frameNumber%2));
+  VkCommandBuffer cmd1 = ev_vulkan_startframe((RendererData.frameNumber % framebuffering_degree));
   if (cmd1) {
     vkCmdBindPipeline(cmd1, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererData.lightPipeline.pipeline);
     VkDescriptorSet ds[4];
@@ -407,7 +402,7 @@ void run()
     FrameData_clear(&DATA(currentFrame));
   }
 
-  ev_vulkan_endframe(cmd1, (RendererData.frameNumber%2));
+  ev_vulkan_endframe(cmd1, (RendererData.frameNumber % framebuffering_degree));
   RendererData.frameNumber++;
 }
 
@@ -535,11 +530,17 @@ void ev_renderer_registerLightPipeline()
     .pAttachments = &pipelineColorBlendAttachmentState,
   };
 
+  VkPipelineDepthStencilStateCreateInfo pipelineDepthStencilState = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+    .depthTestEnable = VK_TRUE,
+  };
+
   EvGraphicsPipelineCreateInfo pipelineCreateInfo = {
     .stageCount = ARRAYSIZE(shaders),
     .pShaders = shaders,
     .renderPass = ev_vulkan_getrenderpass(),
-    .pColorBlendState = &pipelineColorBlendState
+    .pColorBlendState = &pipelineColorBlendState,
+    .pDepthStencilState = &pipelineDepthStencilState,
   };
 
   vec(DescriptorSet) overrides = vec_init(DescriptorSet);
@@ -930,6 +931,7 @@ EV_DESTRUCTOR
   pipelineLibraryDestroy(DATA(pipelineLibrary));
 
   ev_renderer_globalsetsdinit();
+  destroyPipeline(&DATA(lightPipeline));
 
   ev_vulkan_deinit();
 

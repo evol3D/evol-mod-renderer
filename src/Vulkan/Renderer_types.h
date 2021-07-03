@@ -11,6 +11,7 @@ typedef enum {
     MATERIALRESOURCE,
     CUSTOMBUFFER,
 } RESOURCETYPE;
+#define SWAPCHAIN_MAX_IMAGES 5
 
 typedef struct
 {
@@ -25,8 +26,6 @@ typedef struct EvTexturer
      VkImageView imageView;
      VkSampler sampler;
  } EvTexture;
-
-#define SWAPCHAIN_MAX_IMAGES 5
 
 typedef struct
 {
