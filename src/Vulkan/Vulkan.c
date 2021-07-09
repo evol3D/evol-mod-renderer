@@ -1011,7 +1011,7 @@ VkRenderPass ev_vulkan_getrenderpass()
   return DATA(renderPass);
 }
 
-EvImage ev_vulkan_allocateimageinpool(VmaPool pool, uint32_t width, uint32_t height, unsigned long long usageFlags)
+EvImage ev_vulkan_allocateimageinpool(VmaPool pool, uint32_t width, uint32_t height, VkFormat format, unsigned long long usageFlags)
 {
     VkImageCreateInfo imageCreateInfo = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -1021,7 +1021,7 @@ EvImage ev_vulkan_allocateimageinpool(VmaPool pool, uint32_t width, uint32_t hei
         .extent.depth = 1,
         .mipLevels = 1,
         .arrayLayers = 1,
-        .format = VK_FORMAT_R8G8B8A8_SRGB,
+        .format = format,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
@@ -1170,9 +1170,9 @@ void ev_vulkan_copybuffertoimage(VkBuffer buffer, VkImage image, uint32_t width,
 
 EvTexture ev_vulkan_registerTexture(VkFormat format, uint32_t width, uint32_t height, void* pixels)
 {
-  uint32_t size = width * height * 4;
+  uint32_t size = width * height * VkFormatSizes[format];
 
-  EvImage newimage = ev_vulkan_allocateimageinpool(DATA(imagesPool), width, height , EV_USAGEFLAGS_RESOURCE_IMAGE);
+  EvImage newimage = ev_vulkan_allocateimageinpool(DATA(imagesPool), width, height, format, EV_USAGEFLAGS_RESOURCE_IMAGE);
   EvBuffer imageStagingBuffer = ev_vulkan_allocatestagingbuffer(size);
   ev_vulkan_updatestagingbuffer(&imageStagingBuffer, size, pixels);
 

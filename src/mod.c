@@ -534,8 +534,24 @@ TextureHandle ev_renderer_registerTexture(CONST_STR imagePath)
     ImageAsset imageAsset = ImageLoader->loadAsset(image_handle);
 
     switch (imageAsset.format) {
-      case EV_IMAGEFORMAT_RGBA8:
+      case EV_IMAGEFORMAT_R8G8B8_SRGB:
+        format = VK_FORMAT_R8G8B8_SRGB;
+        break;
+      case EV_IMAGEFORMAT_R8G8B8_UNORM:
+        format = VK_FORMAT_R8G8B8_UNORM;
+        break;
+      case EV_IMAGEFORMAT_R8G8B8A8_SRGB:
         format = VK_FORMAT_R8G8B8A8_SRGB;
+        break;
+      case EV_IMAGEFORMAT_R8G8B8A8_UNORM:
+        format = VK_FORMAT_R8G8B8A8_UNORM;
+        break;
+      case EV_IMAGEFORMAT_R32G32B32A32_SFLOAT:
+        format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        break;
+      default:
+        printf("Format: %u\n", format);
+        assert(false);
     }
 
     newTexture.bufferSize = imageAsset.bufferSize;
