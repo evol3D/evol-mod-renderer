@@ -41,17 +41,12 @@ typedef struct {
 	} FrameBufferAttachment;
 
 	typedef struct {
+    VkRenderPass renderPass;
 		VkFramebuffer frameBuffer;
+
 		FrameBufferAttachment position, normal, albedo, specular;
 		FrameBufferAttachment depth;
-		VkRenderPass renderPass;
 	} FrameBuffer;
-
-typedef struct
-{
-  Vec3 color;
-  uint32_t intensity;
-} Lights;
 
 typedef struct
 {
@@ -104,6 +99,10 @@ typedef struct {
   uint32_t vertexBufferIndex;
   uint32_t materialIndex;
 } MeshPushConstants;
+
+typedef struct {
+  uint32_t lightCount;
+} LightPushConstants;
 
 typedef struct {
   void* data;
