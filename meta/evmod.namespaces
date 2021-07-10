@@ -12,3 +12,8 @@ EV_NS_DEF_END(Material)
 EV_NS_DEF_BEGIN(GraphicsPipeline)
 EV_NS_DEF_FN(void, readJSONList, (PTR, jsonContext), (CONST_STR, list))
 EV_NS_DEF_END(GraphicsPipeline)
+
+EV_NS_DEF_BEGIN(Light)
+EV_NS_DEF_FN(LightComponent, registerComponent, (PTR, jsonContext), (CONST_STR, light))
+EV_NS_DEF_FN(void, addFrameLightData, (LightComponent*, components), (Matrix4x4* ,transforms), (uint32_t, count))
+EV_NS_DEF_END(Light)

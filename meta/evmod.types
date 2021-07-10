@@ -18,3 +18,8 @@ TYPE(RenderComponent, struct {
 
   Mesh mesh;
 })
+
+TYPE(LightComponent, struct {
+  Vec4 color;
+  float intensity;
+})

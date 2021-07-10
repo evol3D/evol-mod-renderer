@@ -11,6 +11,7 @@ typedef enum {
     MATERIALRESOURCE,
     CUSTOMBUFFER,
 } RESOURCETYPE;
+#define SWAPCHAIN_MAX_IMAGES 5
 
 typedef struct
 {
@@ -26,8 +27,6 @@ typedef struct EvTexturer
      VkSampler sampler;
  } EvTexture;
 
-#define SWAPCHAIN_MAX_IMAGES 5
-
 typedef struct
 {
   VkBuffer buffer;
@@ -35,11 +34,19 @@ typedef struct
   VmaAllocationInfo allocationInfo;
 } EvBuffer;
 
-typedef struct
-{
-  Vec3 color;
-  uint32_t intensity;
-} Lights;
+typedef struct {
+		EvTexture texture;
+		VkDeviceMemory mem;
+		VkFormat format;
+	} FrameBufferAttachment;
+
+	typedef struct {
+    VkRenderPass renderPass;
+		VkFramebuffer frameBuffer;
+
+		FrameBufferAttachment position, normal, albedo, specular;
+		FrameBufferAttachment depth;
+	} FrameBuffer;
 
 typedef struct
 {
@@ -62,9 +69,9 @@ typedef struct {
   VkImageView imageViews[SWAPCHAIN_MAX_IMAGES];
   VkCommandBuffer commandBuffers[SWAPCHAIN_MAX_IMAGES];
 
-  VkSemaphore presentSemaphore;
-  VkSemaphore submittionSemaphore;
-  VkFence frameSubmissionFences[SWAPCHAIN_MAX_IMAGES];
+  VkSemaphore presentSemaphores[SWAPCHAIN_MAX_IMAGES];
+  VkSemaphore renderSemaphores[SWAPCHAIN_MAX_IMAGES];
+  VkFence renderFences[SWAPCHAIN_MAX_IMAGES];
 } EvSwapchain;
 
 typedef struct
@@ -92,6 +99,10 @@ typedef struct {
   uint32_t vertexBufferIndex;
   uint32_t materialIndex;
 } MeshPushConstants;
+
+typedef struct {
+  uint32_t lightCount;
+} LightPushConstants;
 
 typedef struct {
   void* data;

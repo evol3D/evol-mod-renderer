@@ -6,5 +6,5 @@
 
 
 
-void ev_swapchain_create(EvSwapchain *Swapchain, VkSurfaceKHR *surface);
+void ev_swapchain_create(uint32_t framebuffering, EvSwapchain *Swapchain, VkSurfaceKHR *surface);
 void ev_swapchain_destroy(EvSwapchain *Swapchain);
