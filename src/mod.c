@@ -11,8 +11,13 @@
 
 #include <VulkanQueueManager.h>
 
+#include <SyncManager/SyncManager.h>
+#include <RenderPass/RenderPass.h>
+
 #define DEFAULTPIPELINE "DefaultPipeline"
 #define DEFAULTEXTURE "DefaultTexture"
+
+#define BINDLESSARRAYSIZE 2000
 
 #define EV_WINDOW_VULKAN_SUPPORT
 #define IMPORT_MODULE evmod_glfw
@@ -120,6 +125,19 @@ struct ev_Renderer_Data
   Pipeline skyboxPipeline;
 
   uint32_t frameNumber;
+
+  RenderPass lightPass;
+  RenderPass offscreenPass;
+
+  VkFence renderFences[SWAPCHAIN_MAX_IMAGES];
+
+  VkSemaphore offscreenRendering[SWAPCHAIN_MAX_IMAGES];
+  VkSemaphore lightRendering[SWAPCHAIN_MAX_IMAGES];
+  VkSemaphore skyboxRendering[SWAPCHAIN_MAX_IMAGES];
+
+  VkCommandBuffer offscreencommandbuffer[SWAPCHAIN_MAX_IMAGES];
+  VkCommandBuffer lightcommandbuffer[SWAPCHAIN_MAX_IMAGES];
+
 } RendererData;
 
 DECLARE_EVENT_LISTENER(WindowResizedListener, (WindowResizedEvent *event) {
@@ -216,19 +234,19 @@ void ev_renderer_globalsetsinit()
     {
       {
         .binding = 0,
-        .descriptorCount = 2000,
+        .descriptorCount = BINDLESSARRAYSIZE,
         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
       },
       {
         .binding = 1,
-        .descriptorCount = 2000,
+        .descriptorCount = BINDLESSARRAYSIZE,
         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
       },
       {
         .binding = 2,
-        .descriptorCount = 2000,
+        .descriptorCount = BINDLESSARRAYSIZE,
         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
       },
@@ -240,7 +258,7 @@ void ev_renderer_globalsetsinit()
       },
       {
         .binding = 4,
-        .descriptorCount = 2000,
+        .descriptorCount = BINDLESSARRAYSIZE,
         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
         .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
       },
@@ -305,11 +323,288 @@ void setWindow(WindowHandle handle)
   ev_renderer_createSurface();
   ev_vulkan_createEvswapchain(framebuffering_degree);
 
-  ev_vulkan_createoffscreenrenderpass();
-  ev_vulkan_createoffscreenframebuffer();
+  ev_renderer_createoffscreenpass();
+  ev_renderer_createlightpass();
 
   ev_vulkan_createrenderpass();
   ev_vulkan_createframebuffers();
+}
+
+void ev_renderer_createoffscreenpass()
+{
+  VkExtent3D passExtent = {
+    .width       = 800,
+    .height      = 600,
+    .depth       = 1,
+  };
+
+  PassAttachment attachmentDescriptions[] = {
+    //position
+    {
+      .subpass = 0,
+
+      .format = VK_FORMAT_R16G16B16A16_SFLOAT,
+      .type = EV_RENDERPASSATTACHMENT_TYPE_COLOR,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .useLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+
+      .extent = passExtent,
+      .usageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      .aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT,
+    },
+    //normal
+    {
+      .subpass = 0,
+
+      .format = VK_FORMAT_R16G16B16A16_SFLOAT,
+      .type = EV_RENDERPASSATTACHMENT_TYPE_COLOR,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .useLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+
+      .extent = passExtent,
+      .usageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      .aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT,
+    },
+    //albedo
+    {
+      .subpass = 0,
+
+      .format = VK_FORMAT_R8G8B8A8_UNORM,
+      .type = EV_RENDERPASSATTACHMENT_TYPE_COLOR,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .useLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+
+      .extent = passExtent,
+      .usageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      .aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT,
+    },
+    //specular
+    {
+      .subpass = 0,
+
+      .format = VK_FORMAT_R8G8B8A8_UNORM,
+      .type = EV_RENDERPASSATTACHMENT_TYPE_COLOR,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .useLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+
+      .extent = passExtent,
+      .usageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      .aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT,
+    },
+    //depth
+    {
+      .subpass = 0,
+
+      .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
+      .type = EV_RENDERPASSATTACHMENT_TYPE_DEPTH,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .useLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+
+      .extent = passExtent,
+      .usageFlags = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+      .aspectFlags = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+    },
+  };
+
+  VkSubpassDependency dependencies[] = {
+    {
+      .srcSubpass = VK_SUBPASS_EXTERNAL,
+      .dstSubpass = 0,
+      .srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+      .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+      .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT,
+      .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+      .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+    },
+    {
+      .srcSubpass = 0,
+      .dstSubpass = VK_SUBPASS_EXTERNAL,
+      .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+      .dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+      .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+      .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT,
+      .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+    },
+  };
+
+  ev_renderpass_build(framebuffering_degree, passExtent, ARRAYSIZE(attachmentDescriptions), attachmentDescriptions, 1, ARRAYSIZE(dependencies), dependencies, &RendererData.offscreenPass);
+}
+
+void ev_renderer_createlightpass()
+{
+  VkExtent3D passExtent = {
+    .width       = 800,
+    .height      = 600,
+    .depth       = 1,
+  };
+
+  PassAttachment attachmentDescriptions[] = {
+    //position
+    {
+      .subpass = 0,
+
+      .format = VK_FORMAT_R16G16B16A16_SFLOAT,
+      .type = EV_RENDERPASSATTACHMENT_TYPE_COLOR,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .useLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+
+      .extent = passExtent,
+      .usageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      .aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT,
+    },
+  };
+
+  ev_renderpass_build(framebuffering_degree, passExtent, ARRAYSIZE(attachmentDescriptions), attachmentDescriptions, 1, 0, NULL, &RendererData.lightPass);
+}
+
+void ev_renderer_registerLightPipeline()
+{
+  AssetHandle vertAsset= Asset->load("shaders://deferred.vert");
+  ShaderAsset shaderVertAsset = ShaderLoader->loadAsset(vertAsset, EV_SHADERASSETSTAGE_VERTEX, "deferred.vert", NULL, EV_SHADER_BIN);
+
+  AssetHandle fragAsset = Asset->load("shaders://deferred.frag");
+  ShaderAsset shaderFragAsset = ShaderLoader->loadAsset(fragAsset, EV_SHADERASSETSTAGE_FRAGMENT, "deferred.frag", NULL, EV_SHADER_BIN);
+
+  Shader shaders[] = {
+    {
+      .data = shaderVertAsset.binary,
+      .length = shaderVertAsset.len,
+      .stage = VK_SHADER_STAGE_VERTEX_BIT,
+    },
+    {
+      .data = shaderFragAsset.binary,
+      .length = shaderFragAsset.len,
+      .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+    },
+  };
+
+  RendererData.lightPipeline.pSets = vec_init(DescriptorSet);
+
+  VkPipelineColorBlendAttachmentState pipelineColorBlendAttachmentState = {
+    .colorWriteMask =
+      VK_COLOR_COMPONENT_B_BIT |
+      VK_COLOR_COMPONENT_G_BIT |
+      VK_COLOR_COMPONENT_R_BIT |
+      VK_COLOR_COMPONENT_A_BIT ,
+  };
+  VkPipelineColorBlendStateCreateInfo pipelineColorBlendState = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+    .attachmentCount = 1,
+    .pAttachments = &pipelineColorBlendAttachmentState,
+  };
+
+  VkPipelineDepthStencilStateCreateInfo pipelineDepthStencilState = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+    .depthTestEnable = VK_FALSE,
+  };
+
+  EvGraphicsPipelineCreateInfo pipelineCreateInfo = {
+    .stageCount = ARRAYSIZE(shaders),
+    .pShaders = shaders,
+    .renderPass = RendererData.lightPass.renderPass,
+    .pColorBlendState = &pipelineColorBlendState,
+    .pDepthStencilState = &pipelineDepthStencilState,
+  };
+
+  vec(DescriptorSet) overrides = vec_init(DescriptorSet);
+  ev_pipeline_build(pipelineCreateInfo, overrides, &RendererData.lightPipeline);
+  vec_fini(overrides);
+
+  for (size_t i = 0; i < vec_len(RendererData.lightPipeline.pSets); i++)
+    ev_descriptormanager_allocate(RendererData.lightPipeline.pSets[i].layout, &RendererData.lightPipeline.pSets[i].set);
+
+  Framebuffer framebuffer = RendererData.offscreenPass.framebuffers[0];
+
+  ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[0], 0, &framebuffer.frameAttachments[0]);
+  ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[1], 0, &framebuffer.frameAttachments[1]);
+  ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[2], 0, &framebuffer.frameAttachments[2]);
+  ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[3], 0, &framebuffer.frameAttachments[3]);
+
+  ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[1]), &DATA(lightPipeline.pSets[1]).pBindings[0], 0, &(DATA(cameraBuffer).buffer));
+  ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[1]), &DATA(lightPipeline.pSets[1]).pBindings[1], 0, &(DATA(lightsBuffer).buffer));
+}
+
+void ev_renderer_skyboxLightPipeline()
+{
+  RendererData.skyboxPipeline.pSets = vec_init(DescriptorSet);
+
+  AssetHandle vertAsset= Asset->load("shaders://skybox.vert");
+  ShaderAsset shaderVertAsset = ShaderLoader->loadAsset(vertAsset, EV_SHADERASSETSTAGE_VERTEX, "skybox.vert", NULL, EV_SHADER_BIN);
+
+  AssetHandle fragAsset = Asset->load("shaders://skybox.frag");
+  ShaderAsset shaderFragAsset = ShaderLoader->loadAsset(fragAsset, EV_SHADERASSETSTAGE_FRAGMENT, "skybox.frag", NULL, EV_SHADER_BIN);
+
+  Shader shaders[] = {
+    {
+      .data = shaderVertAsset.binary,
+      .length = shaderVertAsset.len,
+      .stage = VK_SHADER_STAGE_VERTEX_BIT,
+    },
+    {
+      .data = shaderFragAsset.binary,
+      .length = shaderFragAsset.len,
+      .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+    },
+  };
+
+  VkPipelineColorBlendAttachmentState pipelineColorBlendAttachmentState = {
+    .colorWriteMask =
+      VK_COLOR_COMPONENT_B_BIT |
+      VK_COLOR_COMPONENT_G_BIT |
+      VK_COLOR_COMPONENT_R_BIT |
+      VK_COLOR_COMPONENT_A_BIT ,
+  };
+
+  VkPipelineRasterizationStateCreateInfo pipelineRasterizationState = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+    .depthClampEnable = VK_FALSE,
+    .rasterizerDiscardEnable = VK_FALSE,
+    .polygonMode = VK_POLYGON_MODE_FILL,
+    .cullMode = VK_CULL_MODE_FRONT_BIT,
+    .lineWidth = 1.0,
+  };
+
+  VkPipelineColorBlendStateCreateInfo pipelineColorBlendState = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+    .attachmentCount = 1,
+    .pAttachments = &pipelineColorBlendAttachmentState,
+  };
+
+  VkPipelineDepthStencilStateCreateInfo pipelineDepthStencilState = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+    .depthTestEnable = VK_TRUE,
+  };
+
+  EvGraphicsPipelineCreateInfo pipelineCreateInfo = {
+    .stageCount = ARRAYSIZE(shaders),
+    .pShaders = shaders,
+    .renderPass = ev_vulkan_getrenderpass(),
+    .pColorBlendState = &pipelineColorBlendState,
+    .pDepthStencilState = &pipelineDepthStencilState,
+    .pColorBlendState = &pipelineColorBlendState,
+  };
+
+  vec(DescriptorSet) overrides = vec_init(DescriptorSet);
+  ev_pipeline_build(pipelineCreateInfo, overrides, &RendererData.skyboxPipeline);
+  vec_fini(overrides);
+
+  for (size_t i = 0; i < vec_len(RendererData.skyboxPipeline.pSets); i++)
+    ev_descriptormanager_allocate(RendererData.skyboxPipeline.pSets[i].layout, &RendererData.skyboxPipeline.pSets[i].set);
+
+  Framebuffer offscreenFrameBuffer = RendererData.offscreenPass.framebuffers[0];
+  Framebuffer lightFrameBuffer = RendererData.lightPass.framebuffers[0];
+
+  ev_vulkan_writeintobinding(DATA(skyboxPipeline.pSets[0]), &DATA(skyboxPipeline.pSets[0]).pBindings[0], 0, &lightFrameBuffer.frameAttachments[0]);
+  ev_vulkan_writeintobinding(DATA(skyboxPipeline.pSets[0]), &DATA(skyboxPipeline.pSets[0]).pBindings[1], 0, &offscreenFrameBuffer.frameAttachments[4]);
+  //
+  // ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[1]), &DATA(lightPipeline.pSets[1]).pBindings[0], 0, &(DATA(cameraBuffer).buffer));
+  // ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[1]), &DATA(lightPipeline.pSets[1]).pBindings[1], 0, &(DATA(lightsBuffer).buffer));
 }
 
 void draw(VkCommandBuffer cmd)
@@ -419,30 +714,348 @@ void run()
     RendererData.windowResized = false;
   }
 
-  // ev_log_debug();
+  VkCommandBuffer cmd;
+  uint32_t swapchainImageIndex;
+  EvSwapchain *swapchain = ev_vulkan_getSwapchain();
+  uint32_t frameNumber = RendererData.frameNumber % framebuffering_degree;
 
-  VkCommandBuffer cmd = ev_vulkan_startframeoffscreen( (RendererData.frameNumber % framebuffering_degree ) );
-  draw(cmd);
-  ev_vulkan_endframeoffscreen(cmd, (RendererData.frameNumber % framebuffering_degree));
+  VkCommandBufferBeginInfo cmdBeginInfo = {
+    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+    .pNext = NULL,
 
-  VkCommandBuffer cmd1 = ev_vulkan_startframe((RendererData.frameNumber % framebuffering_degree));
-  if (cmd1)
+    .pInheritanceInfo = NULL,
+    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+  };
+
+  /////////////////////////////
+  //First pass
   {
+    VK_ASSERT(vkWaitForFences(ev_vulkan_getlogicaldevice(), 1, &swapchain->renderFences[frameNumber], true, ~0ull));
+    VK_ASSERT(vkResetFences(ev_vulkan_getlogicaldevice(), 1, &swapchain->renderFences[frameNumber]));
+
+    cmd = DATA(offscreencommandbuffer)[frameNumber];
+    VK_ASSERT(vkResetCommandBuffer(cmd, 0));
+    VK_ASSERT(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+
+    VkClearValue clearValuesoffscreen[] =
+    {
+      {
+        .color = { {0.0f, 0.0f, 0.0f, 1.f} },
+      },
+      {
+        .color = { {0.0f, 0.0f, 0.0f, 1.f} },
+      },
+      {
+        .color = { {0.0f, 0.0f, 0.0f, 1.f} },
+      },
+      {
+        .color = { {0.0f, 0.0f, 0.0f, 1.f} },
+      },
+      {
+        .depthStencil = {1.0f, 0.0f},
+      }
+    };
+
+    VkRenderPassBeginInfo rpInfooffscreen = {
+      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+      .pNext = NULL,
+
+      .renderPass = DATA(offscreenPass).renderPass,
+      .renderArea.offset.x = 0,
+      .renderArea.offset.y = 0,
+      .renderArea.extent.width = DATA(offscreenPass).extent.width,
+      .renderArea.extent.height = DATA(offscreenPass).extent.height,
+      .framebuffer = DATA(offscreenPass).framebuffers[frameNumber].framebuffer,
+
+      .clearValueCount = ARRAYSIZE(clearValuesoffscreen),
+      .pClearValues = &clearValuesoffscreen,
+    };
+    vkCmdBeginRenderPass(cmd, &rpInfooffscreen, VK_SUBPASS_CONTENTS_INLINE);
+
+    {
+      VkRect2D scissor = {
+        .offset = {0, 0},
+        .extent = (VkExtent2D) {
+          .width = DATA(offscreenPass).extent.width,
+          .height = DATA(offscreenPass).extent.height,
+        },
+      };
+
+      VkViewport viewport = {
+        .x = 0,
+        .y = DATA(offscreenPass).extent.height,
+        .width = DATA(offscreenPass).extent.width,
+        .height = -(float) DATA(offscreenPass).extent.height,
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+      };
+
+      vkCmdSetScissor(cmd, 0, 1, &scissor);
+      vkCmdSetViewport(cmd, 0, 1, &viewport);
+    }
+
+    draw(cmd);
+
+    vkCmdEndRenderPass(cmd);
+    VK_ASSERT(vkEndCommandBuffer(cmd));
+    VkSubmitInfo submit = {
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+      .pNext = NULL,
+    };
+
+    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+    submit.pWaitDstStageMask = &waitStage;
+
+    submit.signalSemaphoreCount = 1;
+    submit.pSignalSemaphores = &DATA(offscreenRendering)[frameNumber];
+
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &cmd;
+
+    VK_ASSERT(vkQueueSubmit(VulkanQueueManager.getQueue(GRAPHICS), 1, &submit, VK_NULL_HANDLE));
+  }
+  // end First pass
+  //////////////////
+
+  /////////////////////////////
+  //Second pass
+  {
+    cmd = DATA(lightcommandbuffer)[frameNumber];
+    VK_ASSERT(vkResetCommandBuffer(cmd, 0));
+    VK_ASSERT(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+
+    VkClearValue clearValuesoffscreen[] =
+    {
+      {
+        .color = { {0.0f, 0.0f, 0.0f, 1.f} },
+      }
+    };
+
+    VkRenderPassBeginInfo rpInfooffscreen = {
+      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+      .pNext = NULL,
+
+      .renderPass = DATA(lightPass).renderPass,
+      .renderArea.offset.x = 0,
+      .renderArea.offset.y = 0,
+      .renderArea.extent.width = DATA(lightPass).extent.width,
+      .renderArea.extent.height = DATA(lightPass).extent.height,
+      .framebuffer = DATA(lightPass).framebuffers[frameNumber].framebuffer,
+
+      .clearValueCount = ARRAYSIZE(clearValuesoffscreen),
+      .pClearValues = &clearValuesoffscreen,
+    };
+    vkCmdBeginRenderPass(cmd, &rpInfooffscreen, VK_SUBPASS_CONTENTS_INLINE);
+
+    {
+      VkRect2D scissor = {
+        .offset = {0, 0},
+        .extent = (VkExtent2D) {
+          .width = DATA(lightPass).extent.width,
+          .height = DATA(lightPass).extent.height,
+        },
+      };
+
+      VkViewport viewport = {
+        .x = 0,
+        .y = DATA(lightPass).extent.height,
+        .width = DATA(lightPass).extent.width,
+        .height = -(float) DATA(lightPass).extent.height,
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+      };
+
+      vkCmdSetScissor(cmd, 0, 1, &scissor);
+      vkCmdSetViewport(cmd, 0, 1, &viewport);
+    }
+
     ev_vulkan_updateubo(sizeof(LightObject) * vec_len(DATA(currentFrame).lightObjects), RendererData.currentFrame.lightObjects, &(DATA(lightsBuffer).buffer));
     LightPushConstants lightPushConstants;
     lightPushConstants.lightCount = vec_len(DATA(currentFrame).lightObjects);
-    vkCmdPushConstants(cmd1, RendererData.lightPipeline.pipelineLayout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, sizeof(LightPushConstants), &lightPushConstants);
-    vkCmdBindPipeline(cmd1, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererData.lightPipeline.pipeline);
+    vkCmdPushConstants(cmd, RendererData.lightPipeline.pipelineLayout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, sizeof(LightPushConstants), &lightPushConstants);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererData.lightPipeline.pipeline);
     VkDescriptorSet ds[4];
     for (size_t i = 0; i < vec_len(RendererData.lightPipeline.pSets); i++)
     {
       ds[i] = RendererData.lightPipeline.pSets[i].set;
     }
-    vkCmdBindDescriptorSets(cmd1, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererData.lightPipeline.pipelineLayout, 0, vec_len(RendererData.lightPipeline.pSets), ds, 0, 0);
-    vkCmdDraw(cmd1, 3, 1, 0, 0);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererData.lightPipeline.pipelineLayout, 0, vec_len(RendererData.lightPipeline.pSets), ds, 0, 0);
+    vkCmdDraw(cmd, 3, 1, 0, 0);
 
-    ev_vulkan_endframe(cmd1, (RendererData.frameNumber % framebuffering_degree));
+    vkCmdEndRenderPass(cmd);
+    VK_ASSERT(vkEndCommandBuffer(cmd));
+    VkSubmitInfo submit = {
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+      .pNext = NULL,
+    };
+
+    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+    submit.waitSemaphoreCount = 1;
+    submit.pWaitDstStageMask = &waitStage;
+    submit.pWaitSemaphores = &DATA(offscreenRendering)[frameNumber];
+
+    submit.signalSemaphoreCount = 1;
+    submit.pSignalSemaphores = &DATA(lightRendering)[frameNumber];
+
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &cmd;
+
+    VK_ASSERT(vkQueueSubmit(VulkanQueueManager.getQueue(GRAPHICS), 1, &submit, VK_NULL_HANDLE));
   }
+  // end Second pass
+  //////////////////
+
+  // //////////////////
+  // //Third pass////
+  // {
+  //   VK_ASSERT(vkResetCommandBuffer(swapchain->commandBuffers[frameNumber], 0));
+  //   vkAcquireNextImageKHR(ev_vulkan_getlogicaldevice(), swapchain->swapchain, ~0ull, swapchain->presentSemaphores[frameNumber], NULL, &swapchainImageIndex);
+  //   cmd = swapchain->commandBuffers[frameNumber];
+  //
+  //   VK_ASSERT(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+  //
+  //   VkImageMemoryBarrier imageMemoryBarrier =
+  //   {
+  //     .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+  //     .pNext = NULL,
+  //     .srcAccessMask = 0,
+  //     .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+  //     .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+  //     .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+  //     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
+  //     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
+  //     .image = swapchain->images[swapchainImageIndex],
+  //     .subresourceRange =
+  //     {
+  //       .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+  //       .levelCount = VK_REMAINING_MIP_LEVELS,
+  //       .layerCount = VK_REMAINING_ARRAY_LAYERS,
+  //     }
+  //   };
+  //
+  //   vkCmdPipelineBarrier(cmd,
+  //     VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+  //     VK_DEPENDENCY_BY_REGION_BIT, 0, NULL, 0, NULL, 1, &imageMemoryBarrier);
+  //
+  //   VkClearValue clearValues[] =
+  //   {
+  //     {
+  //       .color = { {0.13f, 0.22f, 0.37f, 1.f} },
+  //     },
+  //     {
+  //       .depthStencil = {1.0f, 0.0f},
+  //     }
+  //   };
+  //
+  //   VkRenderPassBeginInfo rpInfo = {
+  //     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+  //     .pNext = NULL,
+  //
+  //     .renderPass = swapchain->renderPass,
+  //     .renderArea.offset.x = 0,
+  //     .renderArea.offset.y = 0,
+  //     .renderArea.extent.width = swapchain->windowExtent.width,
+  //     .renderArea.extent.height = swapchain->windowExtent.height,
+  //     .framebuffer = swapchain->framebuffers[swapchainImageIndex],
+  //
+  //     .clearValueCount = ARRAYSIZE(clearValues),
+  //     .pClearValues = &clearValues,
+  //   };
+  //
+  //   vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+  //
+  //   {
+  //     VkRect2D scissor = {
+  //       .offset = {0, 0},
+  //       .extent = swapchain->windowExtent,
+  //     };
+  //
+  //     VkViewport viewport =
+  //     {
+  //       .x = 0,
+  //       .y = swapchain->windowExtent.height,
+  //       .width = swapchain->windowExtent.width,
+  //       .height = -(float) swapchain->windowExtent.height,
+  //       .minDepth = 0.0f,
+  //       .maxDepth = 1.0f,
+  //     };
+  //     vkCmdSetScissor(cmd, 0, 1, &scissor);
+  //     vkCmdSetViewport(cmd, 0, 1, &viewport);
+  //   }
+  //
+  //   //draw
+  //
+  //   vkCmdEndRenderPass(cmd);
+  //
+  //   VkImageMemoryBarrier imageMemoryBarrier1 =
+  //   {
+  //     .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+  //     .pNext = NULL,
+  //     .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+  //     .dstAccessMask = 0,
+  //     .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+  //     .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+  //     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
+  //     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,  // TODO
+  //     .image = swapchain->images[swapchainImageIndex],
+  //     .subresourceRange =
+  //     {
+  //       .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+  //       .levelCount = VK_REMAINING_MIP_LEVELS,
+  //       .layerCount = VK_REMAINING_ARRAY_LAYERS,
+  //     }
+  //   };
+  //
+  //   vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_DEPENDENCY_BY_REGION_BIT, 0, NULL, 0, NULL, 1, &imageMemoryBarrier1);
+  //
+  //   VK_ASSERT(vkEndCommandBuffer(cmd));
+  //
+  //   VkSubmitInfo submit = {
+  //     .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+  //     .pNext = NULL,
+  //   };
+  //
+  //   VkSemaphore waitSemaphores[] = {
+  //     DATA(lightRendering)[frameNumber],
+  //     swapchain->presentSemaphores[frameNumber],
+  //   };
+  //
+  //   VkPipelineStageFlags waitStages[] = {
+  //     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+  //     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+  //   };
+  //
+  //   submit.waitSemaphoreCount = ARRAYSIZE(waitStages);
+  //   submit.pWaitDstStageMask = &waitStages;
+  //   submit.pWaitSemaphores = waitSemaphores;
+  //
+  //   submit.signalSemaphoreCount = 1;
+  //   submit.pSignalSemaphores = &swapchain->renderSemaphores[frameNumber];
+  //
+  //   submit.commandBufferCount = 1;
+  //   submit.pCommandBuffers = &cmd;
+  //
+  //   VK_ASSERT(vkQueueSubmit(VulkanQueueManager.getQueue(GRAPHICS), 1, &submit, VK_NULL_HANDLE));
+  //
+  //   VkPresentInfoKHR presentInfo = {
+  //     .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+  //     .pNext = NULL,
+  //
+  //     .waitSemaphoreCount = 1,
+  //     .pWaitSemaphores = &swapchain->renderSemaphores[frameNumber],
+  //
+  //     .swapchainCount = 1,
+  //     .pSwapchains = &swapchain->swapchain,
+  //
+  //     .pImageIndices = &swapchainImageIndex,
+  //   };
+  //
+  //   vkQueuePresentKHR(VulkanQueueManager.getQueue(GRAPHICS), &presentInfo);
+  // }
+  // //end second pass
+  // ////////////////
 
   FrameData_clear(&DATA(currentFrame));
   RendererData.frameNumber++;
@@ -533,7 +1146,7 @@ PipelineHandle ev_renderer_registerPipeline(CONST_STR pipelineName, vec(Shader) 
   EvGraphicsPipelineCreateInfo pipelineCreateInfo = {
     .stageCount = vec_len(*shaders),
     .pShaders = *shaders,
-    .renderPass = ev_vulkan_getoffscreenrenderpass(),
+    .renderPass = RendererData.offscreenPass.renderPass,
   };
 
   vec(DescriptorSet) overrides = vec_init(DescriptorSet);
@@ -550,151 +1163,6 @@ PipelineHandle ev_renderer_registerPipeline(CONST_STR pipelineName, vec(Shader) 
   Hashmap(evstring, MaterialHandle).push(DATA(pipelineLibrary).map, evstring_new(pipelineName), new_handle);
 
   return new_handle;
-}
-
-void ev_renderer_registerLightPipeline()
-{
-  AssetHandle vertAsset= Asset->load("shaders://deferred.vert");
-  ShaderAsset shaderVertAsset = ShaderLoader->loadAsset(vertAsset, EV_SHADERASSETSTAGE_VERTEX, "deferred.vert", NULL, EV_SHADER_BIN);
-
-  AssetHandle fragAsset = Asset->load("shaders://deferred.frag");
-  ShaderAsset shaderFragAsset = ShaderLoader->loadAsset(fragAsset, EV_SHADERASSETSTAGE_FRAGMENT, "deferred.frag", NULL, EV_SHADER_BIN);
-
-  Shader shaders[] = {
-    {
-      .data = shaderVertAsset.binary,
-      .length = shaderVertAsset.len,
-      .stage = VK_SHADER_STAGE_VERTEX_BIT,
-    },
-    {
-      .data = shaderFragAsset.binary,
-      .length = shaderFragAsset.len,
-      .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-    },
-  };
-
-  RendererData.lightPipeline.pSets = vec_init(DescriptorSet);
-
-  VkPipelineColorBlendAttachmentState pipelineColorBlendAttachmentState = {
-    .colorWriteMask =
-      VK_COLOR_COMPONENT_B_BIT |
-      VK_COLOR_COMPONENT_G_BIT |
-      VK_COLOR_COMPONENT_R_BIT |
-      VK_COLOR_COMPONENT_A_BIT ,
-  };
-  VkPipelineColorBlendStateCreateInfo pipelineColorBlendState = {
-    .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-    .attachmentCount = 1,
-    .pAttachments = &pipelineColorBlendAttachmentState,
-  };
-
-  VkPipelineDepthStencilStateCreateInfo pipelineDepthStencilState = {
-    .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-    .depthTestEnable = VK_TRUE,
-  };
-
-  EvGraphicsPipelineCreateInfo pipelineCreateInfo = {
-    .stageCount = ARRAYSIZE(shaders),
-    .pShaders = shaders,
-    .renderPass = ev_vulkan_getrenderpass(),
-    .pColorBlendState = &pipelineColorBlendState,
-    .pDepthStencilState = &pipelineDepthStencilState,
-  };
-
-  vec(DescriptorSet) overrides = vec_init(DescriptorSet);
-  ev_pipeline_build(pipelineCreateInfo, overrides, &RendererData.lightPipeline);
-  vec_fini(overrides);
-
-  for (size_t i = 0; i < vec_len(RendererData.lightPipeline.pSets); i++)
-    ev_descriptormanager_allocate(RendererData.lightPipeline.pSets[i].layout, &RendererData.lightPipeline.pSets[i].set);
-
-  FrameBuffer *framebuffer = ev_vulkan_getoffscreenframebuffer();
-
-  ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[0], 0, &framebuffer->position.texture);
-  ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[1], 0, &framebuffer->normal.texture);
-  ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[2], 0, &framebuffer->albedo.texture);
-  ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[3], 0, &framebuffer->specular.texture);
-
-  ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[1]), &DATA(lightPipeline.pSets[1]).pBindings[0], 0, &(DATA(cameraBuffer).buffer));
-  ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[1]), &DATA(lightPipeline.pSets[1]).pBindings[1], 0, &(DATA(lightsBuffer).buffer));
-}
-
-void ev_renderer_skyboxLightPipeline()
-{
-  // RendererData.skyboxPipeline.pSets = vec_init(DescriptorSet);
-  //
-  // AssetHandle vertAsset= Asset->load("shaders://skybox.vert");
-  // ShaderAsset shaderVertAsset = ShaderLoader->loadAsset(vertAsset, EV_SHADERASSETSTAGE_VERTEX, "skybox.vert", NULL, EV_SHADER_BIN);
-  //
-  // AssetHandle fragAsset = Asset->load("shaders://skybox.frag");
-  // ShaderAsset shaderFragAsset = ShaderLoader->loadAsset(fragAsset, EV_SHADERASSETSTAGE_FRAGMENT, "skybox.frag", NULL, EV_SHADER_BIN);
-  //
-  // Shader shaders[] = {
-  //   {
-  //     .data = shaderVertAsset.binary,
-  //     .length = shaderVertAsset.len,
-  //     .stage = VK_SHADER_STAGE_VERTEX_BIT,
-  //   },
-  //   {
-  //     .data = shaderFragAsset.binary,
-  //     .length = shaderFragAsset.len,
-  //     .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-  //   },
-  // };
-  //
-  // VkPipelineColorBlendAttachmentState pipelineColorBlendAttachmentState = {
-  //   .colorWriteMask =
-  //     VK_COLOR_COMPONENT_B_BIT |
-  //     VK_COLOR_COMPONENT_G_BIT |
-  //     VK_COLOR_COMPONENT_R_BIT |
-  //     VK_COLOR_COMPONENT_A_BIT ,
-  // };
-  //
-  // VkPipelineRasterizationStateCreateInfo pipelineRasterizationState = {
-  //   .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-  //   .depthClampEnable = VK_FALSE,
-  //   .rasterizerDiscardEnable = VK_FALSE,
-  //   .polygonMode = VK_POLYGON_MODE_FILL,
-  //   .cullMode = VK_CULL_MODE_FRONT_BIT,
-  //   .lineWidth = 1.0,
-  // };
-  //
-  // VkPipelineColorBlendStateCreateInfo pipelineColorBlendState = {
-  //   .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-  //   .attachmentCount = 1,
-  //   .pAttachments = &pipelineColorBlendAttachmentState,
-  // };
-  //
-  // VkPipelineDepthStencilStateCreateInfo pipelineDepthStencilState = {
-  //   .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-  //   .depthTestEnable = VK_TRUE,
-  // };
-  //
-  // EvGraphicsPipelineCreateInfo pipelineCreateInfo = {
-  //   .stageCount = ARRAYSIZE(shaders),
-  //   .pShaders = shaders,
-  //   .renderPass = ev_vulkan_getrenderpass(asd), //change this
-  //   .pColorBlendState = &pipelineColorBlendState,
-  //   .pDepthStencilState = &pipelineDepthStencilState,
-  //   .pColorBlendState = pipelineColorBlendState,
-  // };
-  //
-  // vec(DescriptorSet) overrides = vec_init(DescriptorSet);
-  // ev_pipeline_build(pipelineCreateInfo, overrides, &RendererData.skyboxPipeline);
-  // vec_fini(overrides);
-  //
-  // for (size_t i = 0; i < vec_len(RendererData.skyboxPipeline.pSets); i++)
-  //   ev_descriptormanager_allocate(RendererData.skyboxPipeline.pSets[i].layout, &RendererData.skyboxPipeline.pSets[i].set);
-  //
-  // FrameBuffer *framebuffer = ev_vulkan_getoffscreenframebuffer();
-  //
-  // ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[0], 0, &framebuffer->position.texture);
-  // ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[1], 0, &framebuffer->normal.texture);
-  // ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[2], 0, &framebuffer->albedo.texture);
-  // ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[3], 0, &framebuffer->specular.texture);
-  //
-  // ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[1]), &DATA(lightPipeline.pSets[1]).pBindings[0], 0, &(DATA(cameraBuffer).buffer));
-  // ev_vulkan_writeintobinding(DATA(lightPipeline.pSets[1]), &DATA(lightPipeline.pSets[1]).pBindings[1], 0, &(DATA(lightsBuffer).buffer));
 }
 
 void destroyPipeline(Pipeline *pipeline)
@@ -805,7 +1273,9 @@ RenderComponent ev_renderer_registerRenderComponent(const char *meshPath, const 
 
   newComponent.materialIndex = ev_renderer_getMaterial(materialName);
   newComponent.pipelineIndex = RendererData.materialLibrary.pipelineHandles[newComponent.materialIndex];
-  newComponent.mesh = RendererData.meshLibrary.store[ev_renderer_registerMesh(meshPath)];
+
+  uint32_t meshID = ev_renderer_registerMesh(meshPath);
+  newComponent.mesh = RendererData.meshLibrary.store[meshID];
 
   return newComponent;
 }
@@ -1070,6 +1540,7 @@ EV_CONSTRUCTOR
   RendererData.customBuffers  = vec_init(EvBuffer, NULL, ev_vulkan_destroybuffer);
 
   ev_vulkan_init();
+  ev_syncmanager_init();
 
   ev_renderer_globalsetsinit();
 
@@ -1079,6 +1550,16 @@ EV_CONSTRUCTOR
   meshLibraryInit(&DATA(meshLibrary));
 
   ev_renderer_registerTexture(DEFAULTEXTURE);
+
+  ev_syncmanager_allocatefences(SWAPCHAIN_MAX_IMAGES, &DATA(renderFences));
+  ev_syncmanager_allocatesemaphores(SWAPCHAIN_MAX_IMAGES, &DATA(offscreenRendering));
+  ev_syncmanager_allocatesemaphores(SWAPCHAIN_MAX_IMAGES, &DATA(lightRendering));
+  ev_syncmanager_allocatesemaphores(SWAPCHAIN_MAX_IMAGES, &DATA(skyboxRendering));
+
+  for (size_t i = 0; i < SWAPCHAIN_MAX_IMAGES; i++) {
+    ev_vulkan_allocateprimarycommandbuffer(GRAPHICS, &DATA(offscreencommandbuffer)[i]);
+    ev_vulkan_allocateprimarycommandbuffer(GRAPHICS, &DATA(lightcommandbuffer)[i]);
+  }
 }
 
 EV_DESTRUCTOR
@@ -1098,6 +1579,7 @@ EV_DESTRUCTOR
   ev_renderer_globalsetsdinit();
   destroyPipeline(&DATA(lightPipeline));
 
+  ev_syncmanager_deinit();
   ev_vulkan_deinit();
 
   FrameData_fini(&DATA(currentFrame));

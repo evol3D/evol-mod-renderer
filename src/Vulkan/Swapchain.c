@@ -49,7 +49,6 @@ void ev_swapchain_createsyncstructures(EvSwapchain *Swapchain)
 }
 void ev_swapchain_destroysyncstructures(EvSwapchain *Swapchain)
 {
-
   for (size_t i = 0; i < Swapchain->imageCount; i++)
   {
     vkDestroySemaphore(ev_vulkan_getlogicaldevice(), Swapchain->presentSemaphores[i], NULL);
@@ -74,47 +73,47 @@ void ev_swapchain_create(uint32_t framebuffering, EvSwapchain *Swapchain, VkSurf
   Swapchain->surfaceFormat.format = VK_FORMAT_B8G8R8A8_UNORM;
   Swapchain->surfaceFormat.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
 
-  // //depth buffer
-  // {
-  //   Swapchain->depthStencilFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
-  //   VkImageCreateInfo depthImageCreateInfo = {
-  //     .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-  //     .imageType     = VK_IMAGE_TYPE_2D,
-  //     .format        = Swapchain->depthStencilFormat,
-  //     .extent        = (VkExtent3D) {
-  //       .width       = Swapchain->windowExtent.width,
-  //       .height      = Swapchain->windowExtent.height,
-  //       .depth       = 1,
-  //     },
-  //     .mipLevels     = 1,
-  //     .arrayLayers   = 1,
-  //     .samples       = VK_SAMPLE_COUNT_1_BIT,
-  //     .tiling        = VK_IMAGE_TILING_OPTIMAL,
-  //     .usage         = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-  //     .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-  //   };
-  //   VmaAllocationCreateInfo vmaAllocationCreateInfo = {
-  //     .usage = VMA_MEMORY_USAGE_GPU_ONLY,
-  //   };
-  //
-  //   ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &Swapchain->depthImage);
-  //
-  //   VkImageViewCreateInfo depthImageViewCreateInfo = {
-  //     .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-  //     .image = Swapchain->depthImage.image,
-  //     .viewType = VK_IMAGE_VIEW_TYPE_2D,
-  //     .format = Swapchain->depthStencilFormat,
-  //     .components = {0, 0, 0, 0},
-  //     .subresourceRange = (VkImageSubresourceRange) {
-  //       .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
-  //       .baseMipLevel = 0,
-  //       .levelCount = 1,
-  //       .baseArrayLayer = 0,
-  //       .layerCount = 1,
-  //     }
-  //   };
-  //   vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &Swapchain->depthImageView);
-  // }
+  //depth buffer
+  {
+    Swapchain->depthStencilFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
+    VkImageCreateInfo depthImageCreateInfo = {
+      .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+      .imageType     = VK_IMAGE_TYPE_2D,
+      .format        = Swapchain->depthStencilFormat,
+      .extent        = (VkExtent3D) {
+        .width       = Swapchain->windowExtent.width,
+        .height      = Swapchain->windowExtent.height,
+        .depth       = 1,
+      },
+      .mipLevels     = 1,
+      .arrayLayers   = 1,
+      .samples       = VK_SAMPLE_COUNT_1_BIT,
+      .tiling        = VK_IMAGE_TILING_OPTIMAL,
+      .usage         = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VmaAllocationCreateInfo vmaAllocationCreateInfo = {
+      .usage = VMA_MEMORY_USAGE_GPU_ONLY,
+    };
+
+    ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &Swapchain->depthImage);
+
+    VkImageViewCreateInfo depthImageViewCreateInfo = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+      .image = Swapchain->depthImage.image,
+      .viewType = VK_IMAGE_VIEW_TYPE_2D,
+      .format = Swapchain->depthStencilFormat,
+      .components = {0, 0, 0, 0},
+      .subresourceRange = (VkImageSubresourceRange) {
+        .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+      }
+    };
+    vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &Swapchain->depthImageView);
+  }
 
   ev_vulkan_createswapchain(&Swapchain->imageCount, Swapchain->windowExtent, surface, &Swapchain->surfaceFormat, oldSwapchain.swapchain, &Swapchain->swapchain);
 

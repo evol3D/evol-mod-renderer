@@ -100,7 +100,9 @@ void ev_pipeline_build(EvGraphicsPipelineCreateInfo evCreateInfo, vec(Descriptor
       .passOp = VK_STENCIL_OP_KEEP,
       .compareOp = VK_COMPARE_OP_ALWAYS
     },
-    .stencilTestEnable = VK_FALSE
+    .stencilTestEnable = VK_FALSE,
+    .minDepthBounds = 0.0f,
+    .maxDepthBounds = 1.0f,
   };
   VkPipelineColorBlendAttachmentState pipelineColorBlendAttachmentStates[] = {
     {

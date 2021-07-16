@@ -176,17 +176,13 @@ void ev_vulkan_destroyshadermodule(VkShaderModule shaderModule);
 
 void ev_vulkan_destroysetlayout(VkDescriptorSetLayout descriptorSetLayout);
 
-void ev_vulkan_createoffscreenrenderpass();
-
 void ev_vulkan_createrenderpass();
-
-void ev_vulkan_createoffscreenframebuffer();
 
 void ev_vulkan_createframebuffers();
 
 void ev_vulkan_destroyframebuffer();
 void ev_vulkan_destroyrenderpass();
-
+void ev_vulkan_destroyoffscreenrenderpass();
 VkCommandBuffer ev_vulkan_startframeoffscreen(uint32_t frameNumber);
 
 void ev_vulkan_endframeoffscreen(VkCommandBuffer cmd, uint32_t frameNumber);
@@ -195,6 +191,9 @@ VkCommandBuffer ev_vulkan_startframe(uint32_t frameNumber);
 void ev_vulkan_endframe(VkCommandBuffer cmd, uint32_t frameNumber);
 
 VkRenderPass ev_vulkan_getrenderpass();
+
+void ev_vulkan_setrenderpass(VkRenderPass pass);
+void ev_vulkan_setframebuffer(VkFramebuffer framebuffer);
 
 VkRenderPass ev_vulkan_getoffscreenrenderpass();
 void ev_vulkan_allocateimageinpool(VmaPool pool, uint32_t width, uint32_t height, unsigned long long usageFlags, EvImage *image);

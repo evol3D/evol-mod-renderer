@@ -5,13 +5,14 @@
 #include <evol/evol.h>
 #include <evol/threads/evolpthreads.h>
 
+#define SWAPCHAIN_MAX_IMAGES 5
+
 typedef enum {
     VERTEXRESOURCE,
     INDEXRESOURCE,
     MATERIALRESOURCE,
     CUSTOMBUFFER,
 } RESOURCETYPE;
-#define SWAPCHAIN_MAX_IMAGES 5
 
 typedef struct
 {
@@ -72,6 +73,9 @@ typedef struct {
   VkSemaphore presentSemaphores[SWAPCHAIN_MAX_IMAGES];
   VkSemaphore renderSemaphores[SWAPCHAIN_MAX_IMAGES];
   VkFence renderFences[SWAPCHAIN_MAX_IMAGES];
+
+  VkRenderPass renderPass;
+  VkFramebuffer framebuffers[SWAPCHAIN_MAX_IMAGES];
 } EvSwapchain;
 
 typedef struct

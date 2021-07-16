@@ -19,6 +19,8 @@ mod_src = [
   'src/Vulkan/DescriptorManager.c',
   'src/Vulkan/VulkanQueueManager.c',
   'src/Vulkan/Pipeline.c',
+  'src/Vulkan/RenderPass/RenderPass.c',
+  'src/Vulkan/SyncManager/SyncManager.c',
 ]
 
 mod_incdir = [
