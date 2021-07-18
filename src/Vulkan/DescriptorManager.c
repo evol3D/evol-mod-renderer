@@ -14,7 +14,7 @@ void createPool(int count, VkDescriptorPoolCreateFlags flags);
 void ev_descriptormanager_init()
 {
   DATA(pools) = vec_init(VkDescriptorPool, NULL, ev_vulkan_destroydescriptorpool);
-  createPool(1000, 0);
+  createPool(2000, 0);
 }
 
 void ev_descriptormanager_dinit()

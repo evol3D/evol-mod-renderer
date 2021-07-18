@@ -61,13 +61,14 @@ typedef struct {
   VkSwapchainKHR swapchain;
   VkSurfaceFormatKHR surfaceFormat;
 
-  EvImage depthImage;
-  VkImageView depthImageView;
+  EvImage depthImage[SWAPCHAIN_MAX_IMAGES];
+  VkImageView depthImageView[SWAPCHAIN_MAX_IMAGES];
   VkFormat depthStencilFormat;
   VkDeviceMemory depthImageMemory;
 
   VkImage images[SWAPCHAIN_MAX_IMAGES];
   VkImageView imageViews[SWAPCHAIN_MAX_IMAGES];
+
   VkCommandBuffer commandBuffers[SWAPCHAIN_MAX_IMAGES];
 
   VkSemaphore presentSemaphores[SWAPCHAIN_MAX_IMAGES];
@@ -123,7 +124,7 @@ typedef struct {
 } Binding;
 
 typedef struct {
-  VkDescriptorSet set;
+  VkDescriptorSet set[SWAPCHAIN_MAX_IMAGES];
   VkDescriptorSetLayout layout;
   vec(Binding) pBindings;
 } DescriptorSet;

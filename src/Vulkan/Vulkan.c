@@ -295,7 +295,6 @@ void ev_vulkan_createswapchain(unsigned int* imageCount, VkExtent2D extent, VkSu
           : VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
 
   *imageCount = MAX(*imageCount, surfaceCapabilities.minImageCount);
-
   if(surfaceCapabilities.maxImageCount) // If there is an upper limit
   {
     *imageCount = MIN(*imageCount, surfaceCapabilities.maxImageCount);
@@ -496,7 +495,7 @@ void ev_vulkan_destroyimageview(VkImageView imageView)
   vkDestroyImageView(DATA(logicalDevice), imageView, NULL);
 }
 
-void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, uint32_t arrayElement, void *data)
+void ev_vulkan_writeintobinding(uint32_t setIndex, DescriptorSet set, Binding *binding, uint32_t arrayElement, void *data)
 {
   VkWriteDescriptorSet setWrite;
   VkDescriptorBufferInfo bufferInfo = {0};
@@ -517,7 +516,7 @@ void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, uint32_t ar
           .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
           .descriptorCount = 1,
           .descriptorType = binding->type,
-          .dstSet = set.set,
+          .dstSet = set.set[setIndex],
           .dstBinding = binding->binding,
           .dstArrayElement = arrayElement,
           .pBufferInfo = &bufferInfo,
@@ -540,7 +539,7 @@ void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, uint32_t ar
           .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
           .descriptorCount = 1,
           .descriptorType = binding->type,
-          .dstSet = set.set,
+          .dstSet = set.set[setIndex],
           .dstBinding = binding->binding,
           .dstArrayElement = arrayElement,
           .pImageInfo = &imageinfo,
@@ -800,7 +799,7 @@ void ev_vulkan_createframebuffers()
     VkImageView attachments[] =
     {
       DATA(swapchain).imageViews[i],
-      DATA(swapchain).depthImageView
+      DATA(swapchain).depthImageView[i]
     };
 
     ev_vulkan_createframebuffer(attachments, ARRAYSIZE(attachments), DATA(swapchain).renderPass, DATA(swapchain).windowExtent, &DATA(swapchain).framebuffers[i]);

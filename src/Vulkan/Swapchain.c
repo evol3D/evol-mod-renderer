@@ -96,23 +96,29 @@ void ev_swapchain_create(uint32_t framebuffering, EvSwapchain *Swapchain, VkSurf
       .usage = VMA_MEMORY_USAGE_GPU_ONLY,
     };
 
-    ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &Swapchain->depthImage);
+    for (size_t i = 0; i < SWAPCHAIN_MAX_IMAGES; i++) {
+      ev_vulkan_createimage(&depthImageCreateInfo, &vmaAllocationCreateInfo, &Swapchain->depthImage[i]);
+    }
 
-    VkImageViewCreateInfo depthImageViewCreateInfo = {
-      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-      .image = Swapchain->depthImage.image,
-      .viewType = VK_IMAGE_VIEW_TYPE_2D,
-      .format = Swapchain->depthStencilFormat,
-      .components = {0, 0, 0, 0},
-      .subresourceRange = (VkImageSubresourceRange) {
-        .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
-        .baseMipLevel = 0,
-        .levelCount = 1,
-        .baseArrayLayer = 0,
-        .layerCount = 1,
-      }
-    };
-    vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &Swapchain->depthImageView);
+
+    for (size_t i = 0; i < SWAPCHAIN_MAX_IMAGES; i++)
+    {
+      VkImageViewCreateInfo depthImageViewCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = Swapchain->depthImage[i].image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = Swapchain->depthStencilFormat,
+        .components = {0, 0, 0, 0},
+        .subresourceRange = (VkImageSubresourceRange) {
+          .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+          .baseMipLevel = 0,
+          .levelCount = 1,
+          .baseArrayLayer = 0,
+          .layerCount = 1,
+        }
+      };
+      vkCreateImageView(ev_vulkan_getlogicaldevice(), &depthImageViewCreateInfo, NULL, &Swapchain->depthImageView[i]);
+    }
   }
 
   ev_vulkan_createswapchain(&Swapchain->imageCount, Swapchain->windowExtent, surface, &Swapchain->surfaceFormat, oldSwapchain.swapchain, &Swapchain->swapchain);

@@ -150,7 +150,7 @@ void ev_vulkan_allocatedescriptor(VkDescriptorSetAllocateInfo *info, VkDescripto
 
 void ev_vulkan_destroyimageview(VkImageView imageView);
 
-void ev_vulkan_writeintobinding(DescriptorSet set, Binding *binding, uint32_t arrayElement, void *data);
+void ev_vulkan_writeintobinding(uint32_t setIndex, DescriptorSet set, Binding *binding, uint32_t arrayElement, void *data);
 
 void ev_vulkan_allocateubo(unsigned long long bufferSize, bool persistentMap, UBO *ubo);
 
