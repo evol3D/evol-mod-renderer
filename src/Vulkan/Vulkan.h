@@ -182,7 +182,7 @@ void ev_vulkan_createframebuffers();
 
 void ev_vulkan_destroyframebuffer();
 void ev_vulkan_destroyrenderpass();
-void ev_vulkan_destroyoffscreenrenderpass();
+
 VkCommandBuffer ev_vulkan_startframeoffscreen(uint32_t frameNumber);
 
 void ev_vulkan_endframeoffscreen(VkCommandBuffer cmd, uint32_t frameNumber);
@@ -191,20 +191,14 @@ VkCommandBuffer ev_vulkan_startframe(uint32_t frameNumber);
 void ev_vulkan_endframe(VkCommandBuffer cmd, uint32_t frameNumber);
 
 VkRenderPass ev_vulkan_getrenderpass();
-
-void ev_vulkan_setrenderpass(VkRenderPass pass);
-void ev_vulkan_setframebuffer(VkFramebuffer framebuffer);
-
-VkRenderPass ev_vulkan_getoffscreenrenderpass();
 void ev_vulkan_allocateimageinpool(VmaPool pool, uint32_t width, uint32_t height, unsigned long long usageFlags, EvImage *image);
 
-void ev_vulkan_transitionimagelayout(EvImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
-void ev_vulkan_copybuffertoimage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+void ev_vulkan_transitionimagelayout(EvImage image, VkFormat format, uint32_t layerCount, VkImageLayout oldLayout, VkImageLayout newLayout);
+void ev_vulkan_copybuffertoimage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, uint32_t layerCount);
 
 EvTexture ev_vulkan_registerTexture(VkFormat format, uint32_t width, uint32_t height, void* pixels);
+EvTexture ev_vulkan_registerCubeMap(VkFormat format, uint32_t width, uint32_t height, uint32_t LayerCount, void** pixels);
 
 void ev_vulkan_destroytexture(EvTexture *texture);
 
 void ev_vulkan_buildlightPipeline();
-FrameBuffer *ev_vulkan_getoffscreenframebuffer();
-void ev_vulkan_destroyoffscreenframebuffer();

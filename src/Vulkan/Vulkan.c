@@ -725,25 +725,25 @@ void ev_vulkan_createrenderpass()
   {
     //albedo
     {
-      .format = DATA(swapchain).surfaceFormat.format,
+      .format = VK_FORMAT_B8G8R8A8_UNORM,
       .samples = VK_SAMPLE_COUNT_1_BIT,
-      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
       .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
       .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
       .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-      .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
       .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     },
     //depth
     {
       .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
       .samples = VK_SAMPLE_COUNT_1_BIT,
-      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
       .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
       .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
       .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
       .initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-      .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
     },
   };
 
@@ -814,21 +814,21 @@ VkRenderPass ev_vulkan_getrenderpass()
 
 void ev_vulkan_allocateimageinpool(VmaPool pool, uint32_t width, uint32_t height, unsigned long long usageFlags, EvImage *image)
 {
-    VkImageCreateInfo imageCreateInfo = {
-      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .extent.width = width,
-        .extent.height = height,
-        .extent.depth = 1,
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .format = VK_FORMAT_R8G8B8A8_SRGB,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .usage = usageFlags,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-      };
+  VkImageCreateInfo imageCreateInfo = {
+    .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+    .imageType = VK_IMAGE_TYPE_2D,
+    .extent.width = width,
+    .extent.height = height,
+    .extent.depth = 1,
+    .mipLevels = 1,
+    .arrayLayers = 1,
+    .format = VK_FORMAT_R8G8B8A8_SRGB,
+    .tiling = VK_IMAGE_TILING_OPTIMAL,
+    .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    .usage = usageFlags,
+    .samples = VK_SAMPLE_COUNT_1_BIT,
+  };
 
   VmaAllocationCreateInfo allocationCreateInfo = {
     .pool = pool,
@@ -837,7 +837,7 @@ void ev_vulkan_allocateimageinpool(VmaPool pool, uint32_t width, uint32_t height
   ev_vulkan_createimage(&imageCreateInfo, &allocationCreateInfo, image);
 }
 
-void ev_vulkan_transitionimagelayout(EvImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
+void ev_vulkan_transitionimagelayout(EvImage image, VkFormat format, uint32_t layerCount, VkImageLayout oldLayout, VkImageLayout newLayout)
 {
   VkCommandBuffer tempCommandBuffer;
   ev_vulkan_allocateprimarycommandbuffer(TRANSFER, &tempCommandBuffer);
@@ -858,7 +858,7 @@ void ev_vulkan_transitionimagelayout(EvImage image, VkFormat format, VkImageLayo
     .subresourceRange.baseMipLevel = 0,
     .subresourceRange.levelCount = 1,
     .subresourceRange.baseArrayLayer = 0,
-    .subresourceRange.layerCount = 1,
+    .subresourceRange.layerCount = layerCount,
   };
 
   VkPipelineStageFlags sourceStage = 0;
@@ -910,7 +910,7 @@ void ev_vulkan_transitionimagelayout(EvImage image, VkFormat format, VkImageLayo
   //vkFreeCommandBuffers(VulkanData.logicalDevice, DATA(transferCommandPool), 1, &tempCommandBuffer);
 }
 
-void ev_vulkan_copybuffertoimage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
+void ev_vulkan_copybuffertoimage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, uint32_t layerCount)
 {
   VkCommandBuffer tempCommandBuffer;
   ev_vulkan_allocateprimarycommandbuffer(TRANSFER, &tempCommandBuffer);
@@ -926,7 +926,7 @@ void ev_vulkan_copybuffertoimage(VkBuffer buffer, VkImage image, uint32_t width,
     .imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
     .imageSubresource.mipLevel = 0,
     .imageSubresource.baseArrayLayer = 0,
-    .imageSubresource.layerCount = 1,
+    .imageSubresource.layerCount = layerCount,
   };
 
   region.imageOffset.x = 0;
@@ -979,14 +979,119 @@ EvTexture ev_vulkan_registerTexture(VkFormat format, uint32_t width, uint32_t he
   ev_vulkan_allocatestagingbuffer(size, &imageStagingBuffer);
   ev_vulkan_updatestagingbuffer(&imageStagingBuffer, size, pixels);
 
-  ev_vulkan_transitionimagelayout(newimage, format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-  ev_vulkan_copybuffertoimage(imageStagingBuffer.buffer, newimage.image, width, height);
-  ev_vulkan_transitionimagelayout(newimage, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  ev_vulkan_transitionimagelayout(newimage, format, 1, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+  ev_vulkan_copybuffertoimage(imageStagingBuffer.buffer, newimage.image, width, height, 1);
+  ev_vulkan_transitionimagelayout(newimage, format, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
   ev_vulkan_destroybuffer(&imageStagingBuffer);
 
   VkImageView imageView;
   ev_vulkan_createimageview(format, &newimage.image, &imageView);
+
+  VkSampler sampler;
+  VkSamplerCreateInfo samplerInfo =
+  {
+      .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+      .magFilter = VK_FILTER_LINEAR,
+      .minFilter = VK_FILTER_LINEAR,
+      .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+      .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+      .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+      .anisotropyEnable = VK_FALSE,
+      .maxAnisotropy = 1.0f,
+      .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+      .unnormalizedCoordinates = VK_FALSE,
+      .compareEnable = VK_FALSE,
+      .compareOp = VK_COMPARE_OP_ALWAYS,
+      .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+      .mipLodBias = 0.0f,
+      .minLod = 0.0f,
+      .maxLod = 0.0f,
+  };
+  vkCreateSampler(VulkanData.logicalDevice, &samplerInfo, NULL, &sampler);
+
+  EvTexture evtexture = {
+      .image = newimage,
+      .imageView = imageView,
+      .sampler = sampler
+  };
+  return evtexture;
+}
+
+EvTexture ev_vulkan_registerCubeMap(VkFormat format, uint32_t width, uint32_t height, uint32_t layerCount, void** pixels)
+{
+  uint32_t layerSize = width * height * 4;
+  uint32_t totalSize = layerSize * layerCount;
+
+  EvImage newimage;
+
+  //allocate cube inpool
+  {
+    VkImageCreateInfo imageCreateInfo = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+      .flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
+      .imageType = VK_IMAGE_TYPE_2D,
+      .extent.width = width,
+      .extent.height = height,
+      .extent.depth = 1,
+      .mipLevels = 1,
+      .arrayLayers = layerCount,
+      .format = VK_FORMAT_R8G8B8A8_SRGB,
+      .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+      .usage = EV_USAGEFLAGS_RESOURCE_IMAGE,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+    };
+
+    VmaAllocationCreateInfo allocationCreateInfo = {
+      .pool = DATA(imagesPool),
+    };
+
+    ev_vulkan_createimage(&imageCreateInfo, &allocationCreateInfo, &newimage);
+  }
+
+  EvBuffer imageStagingBuffer;
+  ev_vulkan_allocatestagingbuffer(totalSize, &imageStagingBuffer);
+
+  //update staging buffer
+  {
+    void *mapped;
+    vmaMapMemory(ev_vulkan_getvmaallocator(), imageStagingBuffer.allocation, &mapped);
+    for (size_t i = 0; i < layerCount; i++)
+    {
+      char* dest = (char*)mapped + layerSize * i;
+      memcpy(dest, pixels[i], layerSize);
+    }
+    vmaUnmapMemory(ev_vulkan_getvmaallocator(), imageStagingBuffer.allocation);
+  }
+
+  ev_vulkan_transitionimagelayout(newimage, format, layerCount, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+  ev_vulkan_copybuffertoimage(imageStagingBuffer.buffer, newimage.image, width, height, layerCount);
+  ev_vulkan_transitionimagelayout(newimage, format, layerCount, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+  ev_vulkan_destroybuffer(&imageStagingBuffer);
+
+  VkImageView imageView;
+  //create image view
+  {
+    VkImageViewCreateInfo imageViewCreateInfo = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+      .image = newimage.image,
+      .viewType = VK_IMAGE_VIEW_TYPE_CUBE,
+      .format = format,
+      .components = {0, 0, 0, 0},
+      .subresourceRange = {
+          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+          .baseMipLevel = 0,
+          .levelCount = 1,
+          .baseArrayLayer = 0,
+          .layerCount = layerCount,
+        },
+    };
+
+    vkCreateImageView(VulkanData.logicalDevice, &imageViewCreateInfo, NULL, &imageView);
+  }
 
   VkSampler sampler;
   VkSamplerCreateInfo samplerInfo =
