@@ -123,21 +123,25 @@ struct ev_Renderer_Data
 
   Pipeline lightPipeline;
   Pipeline skyboxPipeline;
+  Pipeline fxaaPipeline;
   EvTexture skyboxTexture;
 
   uint32_t frameNumber;
 
   RenderPass lightPass;
   RenderPass offscreenPass;
+  RenderPass fxaaPass;
 
   VkFence renderFences[SWAPCHAIN_MAX_IMAGES];
 
   VkSemaphore offscreenRendering[SWAPCHAIN_MAX_IMAGES];
   VkSemaphore lightRendering[SWAPCHAIN_MAX_IMAGES];
   VkSemaphore skyboxRendering[SWAPCHAIN_MAX_IMAGES];
+  VkSemaphore fxaaRendering[SWAPCHAIN_MAX_IMAGES];
 
   VkCommandBuffer offscreencommandbuffer[SWAPCHAIN_MAX_IMAGES];
   VkCommandBuffer lightcommandbuffer[SWAPCHAIN_MAX_IMAGES];
+  VkCommandBuffer fxaacommandbuffer[SWAPCHAIN_MAX_IMAGES];
 
   VkExtent3D extent;
 } RendererData;
@@ -158,6 +162,8 @@ evolmodule_t window_module;
 
 void ev_renderer_registerLightPipeline();
 void ev_renderer_registerskyboxPipeline();
+void ev_renderer_registerfxaaPipeline();
+
 EvTexture ev_renderer_registerCubeMap(CONST_STR imagePath);
 
 void ev_renderer_globalsetsinit()
@@ -332,6 +338,7 @@ void setWindow(WindowHandle handle)
 
   ev_renderer_createoffscreenpass(RendererData.extent);
   ev_renderer_createlightpass(RendererData.extent);
+  ev_renderer_createfxaapass(RendererData.extent);
 
   ev_vulkan_createrenderpass();
   ev_vulkan_createframebuffers();
@@ -350,6 +357,11 @@ void ev_renderer_createoffscreenpass(VkExtent3D passExtent)
       .useLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
       .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+
       .extent = passExtent,
       .usageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
       .aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -363,6 +375,11 @@ void ev_renderer_createoffscreenpass(VkExtent3D passExtent)
       .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
       .useLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
       .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
 
       .extent = passExtent,
       .usageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -378,6 +395,11 @@ void ev_renderer_createoffscreenpass(VkExtent3D passExtent)
       .useLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
       .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+
       .extent = passExtent,
       .usageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
       .aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -392,6 +414,11 @@ void ev_renderer_createoffscreenpass(VkExtent3D passExtent)
       .useLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
       .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+
       .extent = passExtent,
       .usageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
       .aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -405,6 +432,11 @@ void ev_renderer_createoffscreenpass(VkExtent3D passExtent)
       .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
       .useLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
       .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
 
       .extent = passExtent,
       .usageFlags = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -472,6 +504,11 @@ void ev_renderer_createlightpass(VkExtent3D passExtent)
       .useLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
       .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+
       .extent = passExtent,
       .usageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
       .aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -497,6 +534,50 @@ void ev_renderer_createlightpass(VkExtent3D passExtent)
       .layers = RendererData.lightPass.extent.depth,
     };
     VK_ASSERT(vkCreateFramebuffer(ev_vulkan_getlogicaldevice(), &createInfo, NULL, &RendererData.lightPass.framebuffers[i].framebuffer));
+  }
+}
+
+void ev_renderer_createfxaapass(VkExtent3D passExtent)
+{
+  PassAttachment attachmentDescriptions[] = {
+    //position
+    {
+      .subpass = 0,
+
+      .format = VK_FORMAT_B8G8R8A8_UNORM,
+      .type = EV_RENDERPASSATTACHMENT_TYPE_COLOR,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .useLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+
+      .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+
+      .extent = passExtent,
+      .usageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      .aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT,
+    },
+  };
+
+  ev_renderpass_build(SWAPCHAIN_MAX_IMAGES, passExtent, ARRAYSIZE(attachmentDescriptions), attachmentDescriptions, 1, 0, NULL, &RendererData.fxaaPass);
+  EvSwapchain *swapchain = ev_vulkan_getSwapchain();
+
+  for (size_t i = 0; i < SWAPCHAIN_MAX_IMAGES; i++) {
+    VkImageView views[] = {
+      swapchain->imageViews[i],
+    };
+    VkFramebufferCreateInfo createInfo = {
+      .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+      .renderPass = RendererData.fxaaPass.renderPass,
+      .attachmentCount = ARRAYSIZE(views),
+      .pAttachments = views,
+      .width = RendererData.fxaaPass.extent.width,
+      .height = RendererData.fxaaPass.extent.height,
+      .layers = RendererData.fxaaPass.extent.depth,
+    };
+    VK_ASSERT(vkCreateFramebuffer(ev_vulkan_getlogicaldevice(), &createInfo, NULL, &RendererData.fxaaPass.framebuffers[i].framebuffer));
   }
 }
 
@@ -670,9 +751,71 @@ void ev_renderer_registerskyboxPipeline()
   ev_vulkan_writeintobinding(0, DATA(skyboxPipeline.pSets[1]), &DATA(skyboxPipeline.pSets[1]).pBindings[0], 0, &(DATA(cameraBuffer).buffer));
 }
 
-void draw(VkCommandBuffer cmd)
+void ev_renderer_registerfxaaPipeline()
 {
+  RendererData.fxaaPipeline.pSets = vec_init(DescriptorSet);
 
+  AssetHandle vertAsset= Asset->load("shaders://fxaa.vert");
+  ShaderAsset shaderVertAsset = ShaderLoader->loadAsset(vertAsset, EV_SHADERASSETSTAGE_VERTEX, "fxaa.vert", NULL, EV_SHADER_BIN);
+
+  AssetHandle fragAsset = Asset->load("shaders://fxaa.frag");
+  ShaderAsset shaderFragAsset = ShaderLoader->loadAsset(fragAsset, EV_SHADERASSETSTAGE_FRAGMENT, "fxaa.frag", NULL, EV_SHADER_BIN);
+
+  Shader shaders[] = {
+    {
+      .data = shaderVertAsset.binary,
+      .length = shaderVertAsset.len,
+      .stage = VK_SHADER_STAGE_VERTEX_BIT,
+    },
+    {
+      .data = shaderFragAsset.binary,
+      .length = shaderFragAsset.len,
+      .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+    },
+  };
+
+  VkPipelineColorBlendAttachmentState pipelineColorBlendAttachmentState = {
+    .colorWriteMask =
+      VK_COLOR_COMPONENT_B_BIT |
+      VK_COLOR_COMPONENT_G_BIT |
+      VK_COLOR_COMPONENT_R_BIT |
+      VK_COLOR_COMPONENT_A_BIT ,
+  };
+  VkPipelineColorBlendStateCreateInfo pipelineColorBlendState = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+    .attachmentCount = 1,
+    .pAttachments = &pipelineColorBlendAttachmentState,
+  };
+
+  VkPipelineRasterizationStateCreateInfo pipelineRasterizationState = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+    .cullMode = VK_CULL_MODE_NONE,
+    .lineWidth = 1.0,
+  };
+
+  VkPipelineDepthStencilStateCreateInfo pipelineDepthStencilState = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+    .depthTestEnable = VK_FALSE,
+  };
+
+  EvGraphicsPipelineCreateInfo pipelineCreateInfo = {
+    .stageCount = ARRAYSIZE(shaders),
+    .pShaders = shaders,
+    .renderPass = RendererData.fxaaPass.renderPass,
+    .pColorBlendState = &pipelineColorBlendState,
+    .pDepthStencilState = &pipelineDepthStencilState,
+    .pColorBlendState = &pipelineColorBlendState,
+    .pRasterizationState = &pipelineRasterizationState
+  };
+
+  vec(DescriptorSet) overrides = vec_init(DescriptorSet);
+  ev_pipeline_build(pipelineCreateInfo, overrides, &RendererData.fxaaPipeline);
+  vec_fini(overrides);
+
+  for (size_t i = 0; i < vec_len(RendererData.fxaaPipeline.pSets); i++)
+    for (size_t j = 0; j < SWAPCHAIN_MAX_IMAGES; j++) {
+      ev_descriptormanager_allocate(RendererData.fxaaPipeline.pSets[i].layout, &RendererData.fxaaPipeline.pSets[i].set[j]);
+    }
 }
 
 void ev_renderer_updatewindowsize()
@@ -981,7 +1124,90 @@ void run()
   /////////////////////////////
 
   /////////////////////////////
-  //Third pass////
+  //Third pass
+  {
+    cmd = DATA(fxaacommandbuffer)[frameNumber];
+    VK_ASSERT(vkResetCommandBuffer(cmd, 0));
+    VK_ASSERT(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+
+    VkClearValue clearValuesoffscreen[] =
+    {
+      {
+        .color = { {1.0f, 1.0f, 1.0f, 1.f} },
+      }
+    };
+
+    VkRenderPassBeginInfo rpInfooffscreen = {
+      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+      .pNext = NULL,
+
+      .renderPass = DATA(fxaaPass).renderPass,
+      .renderArea.offset.x = 0,
+      .renderArea.offset.y = 0,
+      .renderArea.extent.width = DATA(fxaaPass).extent.width,
+      .renderArea.extent.height = DATA(fxaaPass).extent.height,
+      .framebuffer = DATA(fxaaPass).framebuffers[swapchainImageIndex].framebuffer,
+
+      .clearValueCount = ARRAYSIZE(clearValuesoffscreen),
+      .pClearValues = &clearValuesoffscreen,
+    };
+    vkCmdBeginRenderPass(cmd, &rpInfooffscreen, VK_SUBPASS_CONTENTS_INLINE);
+
+    {
+      VkRect2D scissor = {
+        .offset = {0, 0},
+        .extent = (VkExtent2D) {
+          .width = DATA(fxaaPass).extent.width,
+          .height = DATA(fxaaPass).extent.height,
+        },
+      };
+
+      VkViewport viewport = {
+        .x = 0,
+        .y = 0,
+        .width = DATA(fxaaPass).extent.width,
+        .height = (float) DATA(fxaaPass).extent.height,
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+      };
+
+      vkCmdSetScissor(cmd, 0, 1, &scissor);
+      vkCmdSetViewport(cmd, 0, 1, &viewport);
+    }
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererData.fxaaPipeline.pipeline);
+    // VkDescriptorSet ds[4];
+    // ds[0] = RendererData.lightPipeline.pSets[0].set[swapchainImageIndex];
+    // ds[1] = RendererData.lightPipeline.pSets[1].set[0];
+    // vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererData.lightPipeline.pipelineLayout, 0, vec_len(RendererData.lightPipeline.pSets), ds, 0, 0);
+    vkCmdDraw(cmd, 3, 1, 0, 0);
+
+    vkCmdEndRenderPass(cmd);
+    VK_ASSERT(vkEndCommandBuffer(cmd));
+    VkSubmitInfo submit = {
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+      .pNext = NULL,
+    };
+
+    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+    submit.waitSemaphoreCount = 1;
+    submit.pWaitDstStageMask = &waitStage;
+    submit.pWaitSemaphores = &DATA(lightRendering)[frameNumber],
+
+    submit.signalSemaphoreCount = 1;
+    submit.pSignalSemaphores = &DATA(fxaaRendering)[frameNumber];
+
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &cmd;
+
+    VK_ASSERT(vkQueueSubmit(VulkanQueueManager.getQueue(GRAPHICS), 1, &submit, VK_NULL_HANDLE));
+  }
+  // end Third pass
+  /////////////////////////////
+
+  /////////////////////////////
+  //Fourth pass////
   {
     VK_ASSERT(vkResetCommandBuffer(swapchain->commandBuffers[frameNumber], 0));
     cmd = swapchain->commandBuffers[frameNumber];
@@ -1077,7 +1303,7 @@ void run()
 
     submit.waitSemaphoreCount = 1;
     submit.pWaitDstStageMask = &waitStage;
-    submit.pWaitSemaphores = &DATA(lightRendering)[frameNumber];
+    submit.pWaitSemaphores = &DATA(fxaaRendering)[frameNumber];
 
     submit.signalSemaphoreCount = 1;
     submit.pSignalSemaphores = &swapchain->renderSemaphores[frameNumber];
@@ -1102,7 +1328,7 @@ void run()
 
     vkQueuePresentKHR(VulkanQueueManager.getQueue(GRAPHICS), &presentInfo);
   }
-  //end Third pass
+  //end Fourth pass
   ////////////////
 
   FrameData_clear(&DATA(currentFrame));
@@ -1526,6 +1752,7 @@ void ev_graphicspipeline_readjsonlist(evjson_t *json_context, const char *list_n
 {
   ev_renderer_registerLightPipeline();
   ev_renderer_registerskyboxPipeline();
+  ev_renderer_registerfxaaPipeline();
 
   vec(AssetHandle) loadedAssets = vec_init(AssetHandle);
   evstring pipelineCount_jsonid = evstring_newfmt("%s.len", list_name);
@@ -1660,10 +1887,12 @@ EV_CONSTRUCTOR
   ev_syncmanager_allocatesemaphores(SWAPCHAIN_MAX_IMAGES, &DATA(offscreenRendering));
   ev_syncmanager_allocatesemaphores(SWAPCHAIN_MAX_IMAGES, &DATA(lightRendering));
   ev_syncmanager_allocatesemaphores(SWAPCHAIN_MAX_IMAGES, &DATA(skyboxRendering));
+  ev_syncmanager_allocatesemaphores(SWAPCHAIN_MAX_IMAGES, &DATA(fxaaRendering));
 
   for (size_t i = 0; i < SWAPCHAIN_MAX_IMAGES; i++) {
     ev_vulkan_allocateprimarycommandbuffer(GRAPHICS, &DATA(offscreencommandbuffer)[i]);
     ev_vulkan_allocateprimarycommandbuffer(GRAPHICS, &DATA(lightcommandbuffer)[i]);
+    ev_vulkan_allocateprimarycommandbuffer(GRAPHICS, &DATA(fxaacommandbuffer)[i]);
   }
 }
 
