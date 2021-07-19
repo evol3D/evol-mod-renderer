@@ -733,17 +733,6 @@ void ev_vulkan_createrenderpass()
       .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
       .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     },
-    //depth
-    {
-      .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
-      .samples = VK_SAMPLE_COUNT_1_BIT,
-      .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
-      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-      .initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-      .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-    },
   };
 
   VkAttachmentReference colorAttachmentReferences[] =
@@ -752,15 +741,6 @@ void ev_vulkan_createrenderpass()
     {
       .attachment = 0,
       .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-    },
-  };
-
-  VkAttachmentReference depthAttachmentReference[] =
-  {
-    //albedo
-    {
-      .attachment = 1,
-      .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
     },
   };
 
@@ -775,7 +755,7 @@ void ev_vulkan_createrenderpass()
       .pResolveAttachments = NULL,
       .preserveAttachmentCount = 0,
       .pPreserveAttachments = NULL,
-      .pDepthStencilAttachment = depthAttachmentReference,
+      .pDepthStencilAttachment = NULL,
     },
   };
 
@@ -799,7 +779,6 @@ void ev_vulkan_createframebuffers()
     VkImageView attachments[] =
     {
       DATA(swapchain).imageViews[i],
-      DATA(swapchain).depthImageView[i]
     };
 
     ev_vulkan_createframebuffer(attachments, ARRAYSIZE(attachments), DATA(swapchain).renderPass, DATA(swapchain).windowExtent, &DATA(swapchain).framebuffers[i]);

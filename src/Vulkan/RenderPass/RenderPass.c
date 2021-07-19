@@ -124,7 +124,7 @@ void createattachmenttexture(PassAttachment attachment, EvTexture *texture)
     .samples       = VK_SAMPLE_COUNT_1_BIT,
     .tiling        = VK_IMAGE_TILING_OPTIMAL,
     .usage         = attachment.usageFlags,
-    .initialLayout = attachment.initialLayout,
+    .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
   };
   VmaAllocationCreateInfo vmaAllocationCreateInfo = {
     .usage = VMA_MEMORY_USAGE_GPU_ONLY,
