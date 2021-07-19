@@ -146,7 +146,7 @@ VkCommandPool ev_vulkan_getcommandpool(QueueType type);
 void ev_vulkan_createdescriptorpool(VkDescriptorPoolCreateInfo *info, VkDescriptorPool *pool);
 void ev_vulkan_destroydescriptorpool(VkDescriptorPool *pool);
 
-void ev_vulkan_allocatedescriptor(VkDescriptorSetAllocateInfo *info, VkDescriptorSet *set);
+VkResult ev_vulkan_allocatedescriptor(VkDescriptorSetAllocateInfo *info, VkDescriptorSet *set);
 
 void ev_vulkan_destroyimageview(VkImageView imageView);
 

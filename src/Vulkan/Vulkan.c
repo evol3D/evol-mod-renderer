@@ -485,9 +485,9 @@ void ev_vulkan_destroydescriptorpool(VkDescriptorPool *pool)
   vkDestroyDescriptorPool(DATA(logicalDevice), *pool, NULL);
 }
 
-void ev_vulkan_allocatedescriptor(VkDescriptorSetAllocateInfo *info, VkDescriptorSet *set)
+VkResult ev_vulkan_allocatedescriptor(VkDescriptorSetAllocateInfo *info, VkDescriptorSet *set)
 {
-  VK_ASSERT(vkAllocateDescriptorSets(DATA(logicalDevice), info, set));
+  return vkAllocateDescriptorSets(DATA(logicalDevice), info, set);
 }
 
 void ev_vulkan_destroyimageview(VkImageView imageView)

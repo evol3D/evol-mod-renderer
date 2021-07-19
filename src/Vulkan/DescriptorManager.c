@@ -2,6 +2,7 @@
 
 #include <vec.h>
 #include <Vulkan_utils.h>
+#include <evol/common/ev_log.h>
 
 struct {
   vec(VkDescriptorPool) pools;
@@ -14,7 +15,7 @@ void createPool(int count, VkDescriptorPoolCreateFlags flags);
 void ev_descriptormanager_init()
 {
   DATA(pools) = vec_init(VkDescriptorPool, NULL, ev_vulkan_destroydescriptorpool);
-  createPool(2000, 0);
+  createPool(1000, 0);
 }
 
 void ev_descriptormanager_dinit()
@@ -55,10 +56,8 @@ void createPool(int count, VkDescriptorPoolCreateFlags flags)
   vec_push(&DATA(pools), &pool);
 }
 
-void ev_descriptormanager_allocate(VkDescriptorSetLayout layout, VkDescriptorSet* set)
+VkResult ev_descriptormanager_allocate(VkDescriptorSetLayout layout, VkDescriptorSet* set)
 {
-  //TODO TRACK descriptors count allocated
-
   VkDescriptorSetAllocateInfo info;
   info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
   info.pNext = NULL;
@@ -66,5 +65,15 @@ void ev_descriptormanager_allocate(VkDescriptorSetLayout layout, VkDescriptorSet
   info.descriptorSetCount = 1;
   info.pSetLayouts = &layout;
 
-  ev_vulkan_allocatedescriptor(&info, set);
+  VkResult result = ev_vulkan_allocatedescriptor(&info, set);
+
+  switch (result)
+  {
+    case VK_ERROR_OUT_OF_POOL_MEMORY_KHR:
+      createPool(1000, 0);
+      VK_ASSERT(ev_descriptormanager_allocate(layout, set));
+      break;
+    default:
+      break;
+  }
 }
