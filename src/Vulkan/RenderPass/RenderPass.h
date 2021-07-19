@@ -13,6 +13,11 @@ typedef struct {
   VkFormat format;
   EV_RENDEPASSATTACHMENT_TYPE type;
 
+  VkAttachmentLoadOp  loadOp;
+  VkAttachmentStoreOp storeOp;
+  VkAttachmentLoadOp  stencilLoadOp;
+  VkAttachmentStoreOp stencilStoreOp;
+
   VkImageLayout initialLayout;
   VkImageLayout useLayout;
   VkImageLayout finalLayout;
