@@ -158,9 +158,15 @@ evolmodule_t game_module;
 evolmodule_t asset_module;
 evolmodule_t window_module;
 
+void ev_renderer_createoffscreenpass(VkExtent3D passExtent);
+void ev_renderer_createlightpass(VkExtent3D passExtent);
+void ev_renderer_createskyboxtpass(VkExtent3D passExtent);
+
 void ev_renderer_registerLightPipeline();
 void ev_renderer_registerskyboxPipeline();
 void ev_renderer_registerfxaaPipeline();
+
+void ev_renderer_createSurface();
 
 EvTexture ev_renderer_registerCubeMap(CONST_STR imagePath);
 
@@ -549,7 +555,7 @@ void ev_renderer_createskyboxtpass(VkExtent3D passExtent)
 
       .format = VK_FORMAT_B8G8R8A8_UNORM,
       .type = EV_RENDERPASSATTACHMENT_TYPE_COLOR,
-      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
       .useLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
       .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 
@@ -1023,7 +1029,6 @@ void run()
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline);
         oldPipeline = pipeline.pipeline;
       }
-
       VkDescriptorSet ds[4];
       for (size_t i = 0; i < vec_len(pipeline.pSets); i++)
       {
