@@ -180,7 +180,13 @@ void ev_renderer_globalsetsinit()
         .descriptorCount = 1,
         .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-      }
+      },
+      {
+        .binding = 2,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+      },
     };
     VkDescriptorSetLayoutCreateInfo sceneDescriptorSetLayoutCreateInfo = {
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -767,6 +773,8 @@ void ev_renderer_registerskyboxPipeline()
 
   ev_vulkan_writeintobinding(0, DATA(skyboxPipeline.pSets[0]), &DATA(skyboxPipeline.pSets[0]).pBindings[0], 0, &RendererData.skyboxTexture);
   ev_vulkan_writeintobinding(0, DATA(skyboxPipeline.pSets[1]), &DATA(skyboxPipeline.pSets[1]).pBindings[0], 0, &(DATA(cameraBuffer).buffer));
+
+  ev_vulkan_writeintobinding(0, DATA(sceneSet), &DATA(sceneSet).pBindings[2], 0, &RendererData.skyboxTexture);
 }
 
 void ev_renderer_registerfxaaPipeline()
