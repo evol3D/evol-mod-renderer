@@ -16,9 +16,9 @@ struct ev_Vulkan_Data {
 
   VkSurfaceKHR surface;
 
-  VmaPool buffersPool;
-  VmaPool imagesPool;
-  VmaAllocator     allocator;
+  VmaPool      buffersPool;
+  VmaPool      imagesPool;
+  VmaAllocator allocator;
 
   VkCommandPool commandPools[QUEUE_TYPE_COUNT];
 
@@ -64,7 +64,6 @@ int ev_vulkan_init()
 
 int ev_vulkan_deinit()
 {
-  ev_vulkan_destroyframebuffer();
   ev_vulkan_destroyrenderpass();
 
   ev_swapchain_destroy(&DATA(swapchain));
@@ -240,8 +239,6 @@ void ev_vulkan_recreateSwapChain()
 {
   vkDeviceWaitIdle(ev_vulkan_getlogicaldevice());
 
-  ev_vulkan_destroyframebuffer();
-
   ev_swapchain_create(0 ,&DATA(swapchain), &DATA(surface));
   ev_vulkan_createframebuffers();
 }
@@ -316,7 +313,7 @@ void ev_vulkan_createswapchain(unsigned int* imageCount, VkExtent2D extent, VkSu
     .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
     .preTransform     = surfaceCapabilities.currentTransform,
     .compositeAlpha   = compositeAlpha,
-    .presentMode      = VK_PRESENT_MODE_MAILBOX_KHR, // TODO: Make sure that this is always supported
+    .presentMode      = VK_PRESENT_MODE_MAILBOX_KHR, // TODO: Make sure that this is always supported //change for fifo for tearing VK_PRESENT_MODE_FIFO_KHR
     .clipped          = VK_TRUE,
     .oldSwapchain     = oldSwapchain,
   };
@@ -1106,4 +1103,9 @@ void ev_vulkan_destroytexture(EvTexture *texture)
   vkDestroySampler(VulkanData.logicalDevice, texture->sampler, NULL);
   ev_vulkan_destroyimageview(texture->imageView);
   ev_vulkan_destroyimage(texture->image);
+}
+
+void ev_vulkan_destroyrenderpass()
+{
+  vkDestroyRenderPass(VulkanData.logicalDevice, VulkanData.swapchain.renderPass, NULL);
 }

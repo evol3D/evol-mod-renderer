@@ -143,11 +143,14 @@ void ev_swapchain_destroy(EvSwapchain *Swapchain)
   ev_swapchain_destroysyncstructures(Swapchain);
   ev_swapchain_destroycommandbuffers(Swapchain);
 
-  // ev_vulkan_destroyimage(Swapchain->depthImage);
-  // ev_vulkan_destroyimageview(Swapchain->depthImageView);
 
   for (size_t i = 0; i < Swapchain->imageCount; i++)
+  {
+    ev_vulkan_destroyimageview(Swapchain->depthImageView[i]);
+    ev_vulkan_destroyimage(Swapchain->depthImage[i]);
     vkDestroyImageView(ev_vulkan_getlogicaldevice(), Swapchain->imageViews[i], NULL);
+    vkDestroyFramebuffer(ev_vulkan_getlogicaldevice(), Swapchain->framebuffers[i], NULL);
+  }
 
   vkDestroySwapchainKHR(ev_vulkan_getlogicaldevice(), Swapchain->swapchain, NULL);
 }

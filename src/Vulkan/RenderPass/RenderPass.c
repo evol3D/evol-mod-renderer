@@ -202,7 +202,24 @@ void ev_renderpass_build(uint32_t bufferingMode, VkExtent3D passExtent, uint32_t
       .layers = passExtent.depth,
     };
 
-    VK_ASSERT(vkCreateFramebuffer(ev_vulkan_getlogicaldevice(), &createInfo, NULL, &pass->framebuffers[0].framebuffer));
+    VK_ASSERT(vkCreateFramebuffer(ev_vulkan_getlogicaldevice(), &createInfo, NULL, &pass->framebuffers[framebufferID].framebuffer));
     vec_fini(views);
   }
+}
+
+void ev_renderpass_destory(RenderPass pass)
+{
+  vkDestroyRenderPass(ev_vulkan_getlogicaldevice(), pass.renderPass, NULL);
+
+  for (size_t i = 0; i < SWAPCHAIN_MAX_IMAGES; i++)
+  {
+    vkDestroyFramebuffer(ev_vulkan_getlogicaldevice() ,pass.framebuffers[i].framebuffer, NULL);
+
+    for (size_t j = 0; j < vec_len(pass.framebuffers[i].frameAttachments); j++)
+      ev_vulkan_destroytexture(&pass.framebuffers[i].frameAttachments[j]);
+
+    vec_fini(pass.framebuffers[i].frameAttachments);
+  }
+
+  vec_fini(pass.framebuffers);
 }

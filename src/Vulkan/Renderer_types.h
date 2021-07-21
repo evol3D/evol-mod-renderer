@@ -35,20 +35,6 @@ typedef struct
   VmaAllocationInfo allocationInfo;
 } EvBuffer;
 
-typedef struct {
-		EvTexture texture;
-		VkDeviceMemory mem;
-		VkFormat format;
-	} FrameBufferAttachment;
-
-	typedef struct {
-    VkRenderPass renderPass;
-		VkFramebuffer frameBuffer;
-
-		FrameBufferAttachment position, normal, albedo, specular;
-		FrameBufferAttachment depth;
-	} FrameBuffer;
-
 typedef struct
 {
   uint lightsCount;
@@ -104,6 +90,12 @@ typedef struct {
   uint32_t vertexBufferIndex;
   uint32_t materialIndex;
 } MeshPushConstants;
+
+typedef struct {
+  Matrix4x4 transform;
+  uint32_t indexBufferIndex;
+  uint32_t vertexBufferIndex;
+} ShadowmapPushConstants;
 
 typedef struct {
   uint32_t lightCount;

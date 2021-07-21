@@ -46,3 +46,5 @@ typedef struct {
 } RenderPass;
 
 void ev_renderpass_build(uint32_t bufferingMode, VkExtent3D passExtent, uint32_t attachmentsCount, PassAttachment* attachments, uint32_t subpassCount, uint32_t dependencyCount, VkSubpassDependency* dependencies, RenderPass *pass);
+
+void ev_renderpass_destory(RenderPass renderpass);

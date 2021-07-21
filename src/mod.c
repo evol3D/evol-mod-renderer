@@ -121,6 +121,7 @@ struct ev_Renderer_Data
   vec(EvBuffer)  indexBuffers;
   vec(EvBuffer)  customBuffers;
 
+  Pipeline shadowmapPipeline;
   Pipeline lightPipeline;
   Pipeline skyboxPipeline;
   Pipeline fxaaPipeline;
@@ -130,14 +131,17 @@ struct ev_Renderer_Data
   uint32_t frameNumber;
 
   RenderPass offscreenPass;
+  RenderPass shadowmapPass;
   RenderPass lightPass;
   RenderPass skyboxPass;
 
   VkSemaphore offscreenRendering[SWAPCHAIN_MAX_IMAGES];
+  VkSemaphore shadowmapRendering[SWAPCHAIN_MAX_IMAGES];
   VkSemaphore lightRendering[SWAPCHAIN_MAX_IMAGES];
   VkSemaphore skyboxRendering[SWAPCHAIN_MAX_IMAGES];
 
   VkCommandBuffer offscreencommandbuffer[SWAPCHAIN_MAX_IMAGES];
+  VkCommandBuffer shadowmapcommandbuffer[SWAPCHAIN_MAX_IMAGES];
   VkCommandBuffer lightcommandbuffer[SWAPCHAIN_MAX_IMAGES];
   VkCommandBuffer skyboxcommandbuffer[SWAPCHAIN_MAX_IMAGES];
 
@@ -159,16 +163,18 @@ evolmodule_t asset_module;
 evolmodule_t window_module;
 
 void ev_renderer_createoffscreenpass(VkExtent3D passExtent);
+void ev_renderer_createshadowmappass(VkExtent3D passExtent);
 void ev_renderer_createlightpass(VkExtent3D passExtent);
 void ev_renderer_createskyboxtpass(VkExtent3D passExtent);
 
+void ev_renderer_registershadowmapPipeline();
 void ev_renderer_registerLightPipeline();
 void ev_renderer_registerskyboxPipeline();
 void ev_renderer_registerfxaaPipeline();
 
 void ev_renderer_createSurface();
 
-EvTexture ev_renderer_registerCubeMap(CONST_STR imagePath);
+void ev_renderer_registerCubeMap(CONST_STR imagePath);
 
 void ev_renderer_globalsetsinit()
 {
@@ -212,10 +218,6 @@ void ev_renderer_globalsetsinit()
     //sceneBuffer
     ev_vulkan_allocateubo(sizeof(EvScene), false, &RendererData.scenesBuffer);
     ev_vulkan_writeintobinding(0, DATA(sceneSet), &DATA(sceneSet).pBindings[0], 0, &(DATA(scenesBuffer).buffer));
-
-    // //lightsBuffer
-    // ev_vulkan_allocateubo(UBOMAXSIZE, false, &RendererData.lightsBuffer);
-    // ev_vulkan_writeintobinding(DATA(sceneSet), &DATA(sceneSet).pBindings[1], 0, &(DATA(lightsBuffer).buffer));
   }
 
   //CameraSet
@@ -321,11 +323,11 @@ void ev_renderer_globalsetsdinit()
   //SceneSet
   ev_vulkan_freeubo(&DATA(scenesBuffer));
   ev_vulkan_freeubo(&DATA(lightsBuffer));
-  // ev_vulkan_destroysetlayout(RendererData.sceneSet.layout);
+  ev_vulkan_destroysetlayout(RendererData.sceneSet.layout);
 
   //cameraSet
   ev_vulkan_freeubo(&DATA(cameraBuffer));
-  // ev_vulkan_destroysetlayout(RendererData.cameraSet.layout);
+  ev_vulkan_destroysetlayout(RendererData.cameraSet.layout);
 
   //Resources set
   ev_vulkan_destroybuffer(&RendererData.materialsBuffer);
@@ -347,6 +349,7 @@ void setWindow(WindowHandle handle)
   ev_vulkan_createEvswapchain(framebuffering_degree);
 
   ev_renderer_createoffscreenpass(RendererData.extent);
+  ev_renderer_createshadowmappass(RendererData.extent);
   ev_renderer_createlightpass(RendererData.extent);
   ev_renderer_createskyboxtpass(RendererData.extent);
 
@@ -481,6 +484,8 @@ void ev_renderer_createoffscreenpass(VkExtent3D passExtent)
 
   for (size_t i = 0; i < SWAPCHAIN_MAX_IMAGES; i++)
   {
+    vkDestroyFramebuffer(ev_vulkan_getlogicaldevice(), RendererData.offscreenPass.framebuffers[i].framebuffer, NULL);
+
     VkImageView views[] = {
       RendererData.offscreenPass.framebuffers[i].frameAttachments[0].imageView,
       RendererData.offscreenPass.framebuffers[i].frameAttachments[1].imageView,
@@ -499,6 +504,33 @@ void ev_renderer_createoffscreenpass(VkExtent3D passExtent)
     };
     VK_ASSERT(vkCreateFramebuffer(ev_vulkan_getlogicaldevice(), &createInfo, NULL, &RendererData.offscreenPass.framebuffers[i].framebuffer));
   }
+}
+
+void ev_renderer_createshadowmappass(VkExtent3D passExtent)
+{
+  PassAttachment attachmentDescriptions[] = {
+    //depth
+    {
+      .subpass = 0,
+
+      .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
+      .type = EV_RENDERPASSATTACHMENT_TYPE_DEPTH,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .useLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+
+      .extent = passExtent,
+      .usageFlags = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      .aspectFlags = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+    },
+  };
+
+  ev_renderpass_build(SWAPCHAIN_MAX_IMAGES, passExtent, ARRAYSIZE(attachmentDescriptions), attachmentDescriptions, 1, 0, NULL, &RendererData.shadowmapPass);
 }
 
 void ev_renderer_createlightpass(VkExtent3D passExtent)
@@ -530,6 +562,8 @@ void ev_renderer_createlightpass(VkExtent3D passExtent)
   EvSwapchain *swapchain = ev_vulkan_getSwapchain();
 
   for (size_t i = 0; i < SWAPCHAIN_MAX_IMAGES; i++) {
+    vkDestroyFramebuffer(ev_vulkan_getlogicaldevice(), RendererData.lightPass.framebuffers[i].framebuffer, NULL);
+
     VkImageView views[] = {
       RendererData.lightPass.framebuffers[i].frameAttachments[0].imageView,
     };
@@ -594,6 +628,8 @@ void ev_renderer_createskyboxtpass(VkExtent3D passExtent)
   EvSwapchain *swapchain = ev_vulkan_getSwapchain();
 
   for (size_t i = 0; i < SWAPCHAIN_MAX_IMAGES; i++) {
+    vkDestroyFramebuffer(ev_vulkan_getlogicaldevice(), RendererData.skyboxPass.framebuffers[i].framebuffer, NULL);
+
     VkImageView views[] = {
       RendererData.lightPass.framebuffers[i].frameAttachments[0].imageView,
       swapchain->depthImageView[i],
@@ -609,6 +645,90 @@ void ev_renderer_createskyboxtpass(VkExtent3D passExtent)
     };
     VK_ASSERT(vkCreateFramebuffer(ev_vulkan_getlogicaldevice(), &createInfo, NULL, &RendererData.skyboxPass.framebuffers[i].framebuffer));
   }
+}
+
+void ev_renderer_registershadowmapPipeline()
+{
+  AssetHandle vertAsset= Asset->load("shaders://shadowmap.vert");
+  ShaderAsset shaderVertAsset = ShaderLoader->loadAsset(vertAsset, EV_SHADERASSETSTAGE_VERTEX, "shadowmap.vert", NULL, EV_SHADER_BIN);
+
+  Shader shaders[] = {
+    {
+      .data = shaderVertAsset.binary,
+      .length = shaderVertAsset.len,
+      .stage = VK_SHADER_STAGE_VERTEX_BIT,
+    },
+  };
+
+  RendererData.shadowmapPipeline.pSets = vec_init(DescriptorSet);
+
+  VkPipelineColorBlendAttachmentState pipelineColorBlendAttachmentState = {
+    .colorWriteMask =
+      VK_COLOR_COMPONENT_B_BIT |
+      VK_COLOR_COMPONENT_G_BIT |
+      VK_COLOR_COMPONENT_R_BIT |
+      VK_COLOR_COMPONENT_A_BIT ,
+  };
+
+  VkPipelineRasterizationStateCreateInfo pipelineRasterizationState = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+    .depthClampEnable = VK_FALSE,
+    .rasterizerDiscardEnable = VK_FALSE,
+    .polygonMode = VK_POLYGON_MODE_FILL,
+    .cullMode = VK_CULL_MODE_BACK_BIT,
+    .lineWidth = 1.0,
+  };
+
+  VkPipelineColorBlendStateCreateInfo pipelineColorBlendState = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+    .attachmentCount = 1,
+    .pAttachments = &pipelineColorBlendAttachmentState,
+  };
+
+  VkPipelineDepthStencilStateCreateInfo pipelineDepthStencilState = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+    .depthTestEnable = VK_TRUE,
+    .depthWriteEnable = VK_TRUE,
+    .depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
+    .depthBoundsTestEnable = VK_FALSE,
+    .back = {
+      .failOp = VK_STENCIL_OP_KEEP,
+      .passOp = VK_STENCIL_OP_KEEP,
+      .compareOp = VK_COMPARE_OP_ALWAYS
+    },
+    .front = {
+      .failOp = VK_STENCIL_OP_KEEP,
+      .passOp = VK_STENCIL_OP_KEEP,
+      .compareOp = VK_COMPARE_OP_ALWAYS
+    },
+    .stencilTestEnable = VK_FALSE,
+    .minDepthBounds = 0.0f,
+    .maxDepthBounds = 1.0f,
+  };
+
+  EvGraphicsPipelineCreateInfo pipelineCreateInfo = {
+    .stageCount = ARRAYSIZE(shaders),
+    .pShaders = shaders,
+    .renderPass = RendererData.shadowmapPass.renderPass,
+    .pColorBlendState = &pipelineColorBlendState,
+    .pDepthStencilState = &pipelineDepthStencilState,
+    .pRasterizationState = &pipelineRasterizationState,
+  };
+
+  vec(DescriptorSet) overrides = vec_init(DescriptorSet);
+  vec_push(&overrides, &RendererData.resourcesSet);
+  ev_pipeline_build(pipelineCreateInfo, overrides, &RendererData.shadowmapPipeline);
+  vec_fini(overrides);
+
+  for (size_t i = 0; i < vec_len(RendererData.shadowmapPipeline.pSets); i++)
+  {
+    for (size_t j = 0; j < SWAPCHAIN_MAX_IMAGES; j++)
+    {
+      ev_descriptormanager_allocate(RendererData.shadowmapPipeline.pSets[i].layout, &RendererData.shadowmapPipeline.pSets[i].set[j]);
+    }
+  }
+
+  ev_vulkan_writeintobinding(0, DATA(shadowmapPipeline.pSets[1]), &DATA(shadowmapPipeline.pSets[1]).pBindings[0], 0, &(DATA(lightsBuffer).buffer));
 }
 
 void ev_renderer_registerLightPipeline()
@@ -775,7 +895,7 @@ void ev_renderer_registerskyboxPipeline()
   Framebuffer offscreenFrameBuffer = RendererData.offscreenPass.framebuffers[0];
   Framebuffer lightFrameBuffer = RendererData.lightPass.framebuffers[0];
 
-  RendererData.skyboxTexture = ev_renderer_registerCubeMap("assets://textures/");
+  ev_renderer_registerCubeMap("assets://textures/");
 
   ev_vulkan_writeintobinding(0, DATA(skyboxPipeline.pSets[0]), &DATA(skyboxPipeline.pSets[0]).pBindings[0], 0, &RendererData.skyboxTexture);
   ev_vulkan_writeintobinding(0, DATA(skyboxPipeline.pSets[1]), &DATA(skyboxPipeline.pSets[1]).pBindings[0], 0, &(DATA(cameraBuffer).buffer));
@@ -1072,6 +1192,113 @@ void run()
   /////////////////////////////
   //Second pass
   {
+    cmd = DATA(shadowmapcommandbuffer)[frameNumber];
+    VK_ASSERT(vkResetCommandBuffer(cmd, 0));
+    VK_ASSERT(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+
+    VkClearValue clearValuesoffscreen[] =
+    {
+      {
+        .depthStencil = {1.0f, 0.0f},
+      }
+    };
+
+    VkRenderPassBeginInfo rpInfooffscreen = {
+      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+      .pNext = NULL,
+
+      .renderPass = DATA(shadowmapPass).renderPass,
+      .renderArea.offset.x = 0,
+      .renderArea.offset.y = 0,
+      .renderArea.extent.width = DATA(shadowmapPass).extent.width,
+      .renderArea.extent.height = DATA(shadowmapPass).extent.height,
+      .framebuffer = DATA(shadowmapPass).framebuffers[swapchainImageIndex].framebuffer,
+
+      .clearValueCount = ARRAYSIZE(clearValuesoffscreen),
+      .pClearValues = &clearValuesoffscreen,
+    };
+    vkCmdBeginRenderPass(cmd, &rpInfooffscreen, VK_SUBPASS_CONTENTS_INLINE);
+
+    {
+      VkRect2D scissor = {
+        .offset = {0, 0},
+        .extent = (VkExtent2D) {
+          .width = DATA(shadowmapPass).extent.width,
+          .height = DATA(shadowmapPass).extent.height,
+        },
+      };
+
+      VkViewport viewport = {
+        .x = 0,
+        .y = 0,
+        .width = DATA(shadowmapPass).extent.width,
+        .height = (float) DATA(shadowmapPass).extent.height,
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+      };
+
+      vkCmdSetScissor(cmd, 0, 1, &scissor);
+      vkCmdSetViewport(cmd, 0, 1, &viewport);
+    }
+
+    VkPipeline oldPipeline;
+    for (size_t componentIndex = 0; componentIndex < vec_len(DATA(currentFrame).objectComponents); componentIndex++)
+    {
+      RenderComponent component = DATA(currentFrame).objectComponents[componentIndex];
+      Pipeline pipeline = RendererData.shadowmapPipeline;
+
+      ShadowmapPushConstants pushconstant;
+      memcpy(pushconstant.transform, DATA(currentFrame).objectTranforms[componentIndex], sizeof(Matrix4x4));
+      pushconstant.indexBufferIndex = component.mesh.indexBufferIndex;
+      pushconstant.vertexBufferIndex = component.mesh.indexBufferIndex;
+
+      vkCmdPushConstants(cmd, pipeline.pipelineLayout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, sizeof(ShadowmapPushConstants), &pushconstant);
+
+      if (oldPipeline != pipeline.pipeline)
+      {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline);
+        oldPipeline = pipeline.pipeline;
+      }
+      VkDescriptorSet ds[4];
+      for (size_t i = 0; i < vec_len(pipeline.pSets); i++)
+      {
+        ds[i] = pipeline.pSets[i].set[0];
+      }
+
+      ds[0] = DATA(resourcesSet).set[0];
+
+      vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipelineLayout, 0, vec_len(pipeline.pSets), ds, 0, 0);
+
+      vkCmdDraw(cmd, component.mesh.indexCount, 1, 0, 0);
+    }
+
+    vkCmdEndRenderPass(cmd);
+    VK_ASSERT(vkEndCommandBuffer(cmd));
+    VkSubmitInfo submit = {
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+      .pNext = NULL,
+    };
+
+    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+    submit.waitSemaphoreCount = 0;
+    submit.pWaitDstStageMask = 0;
+    submit.pWaitSemaphores = 0,
+
+    submit.signalSemaphoreCount = 1;
+    submit.pSignalSemaphores = &DATA(shadowmapRendering)[frameNumber];
+
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &cmd;
+
+    VK_ASSERT(vkQueueSubmit(VulkanQueueManager.getQueue(GRAPHICS), 1, &submit, VK_NULL_HANDLE));
+  }
+  // end Second pass
+  /////////////////////////////
+
+  /////////////////////////////
+  //Third pass
+  {
     cmd = DATA(lightcommandbuffer)[frameNumber];
     VK_ASSERT(vkResetCommandBuffer(cmd, 0));
     VK_ASSERT(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
@@ -1153,11 +1380,11 @@ void run()
 
     VK_ASSERT(vkQueueSubmit(VulkanQueueManager.getQueue(GRAPHICS), 1, &submit, VK_NULL_HANDLE));
   }
-  // end Second pass
+  // end Third pass
   /////////////////////////////
 
   /////////////////////////////
-  //Third pass
+  //Fourth pass
   {
     cmd = DATA(skyboxcommandbuffer)[frameNumber];
     VK_ASSERT(vkResetCommandBuffer(cmd, 0));
@@ -1241,11 +1468,11 @@ void run()
 
     VK_ASSERT(vkQueueSubmit(VulkanQueueManager.getQueue(GRAPHICS), 1, &submit, VK_NULL_HANDLE));
   }
-  // end Third pass
+  // end Fourth pass
   /////////////////////////////
 
   /////////////////////////////
-  //Fourth pass////
+  //Fifth pass////
   {
     VK_ASSERT(vkResetCommandBuffer(swapchain->commandBuffers[frameNumber], 0));
     cmd = swapchain->commandBuffers[frameNumber];
@@ -1480,12 +1707,6 @@ void destroyPipeline(Pipeline *pipeline)
 {
   ev_vulkan_destroypipeline(pipeline->pipeline);
   ev_vulkan_destroypipelinelayout(pipeline->pipelineLayout);
-
-  ev_log_debug("set number : %d", vec_len(pipeline->pSets));
-  for (size_t i = 0; i < vec_len(pipeline->pSets); i++)
-  {
-    ev_vulkan_destroysetlayout(pipeline->pSets[i].layout);
-  }
 }
 
 MeshHandle ev_renderer_registerMesh(CONST_STR meshPath)
@@ -1579,10 +1800,8 @@ TextureHandle ev_renderer_registerTexture(CONST_STR imagePath)
   return new_handle;
 }
 
-EvTexture ev_renderer_registerCubeMap(CONST_STR imagePath)
+void ev_renderer_registerCubeMap(CONST_STR imagePath)
 {
-  EvTexture textureBuffer;
-
   Texture newTexture;
   VkFormat format;
   uint32_t textureIndex;
@@ -1626,10 +1845,7 @@ EvTexture ev_renderer_registerCubeMap(CONST_STR imagePath)
     imageAsset1.data,
   };
 
-  textureBuffer = ev_vulkan_registerCubeMap(format, imageAsset1.width, imageAsset1.height, 6, pixels);
-
-
-  return textureBuffer;
+  RendererData.skyboxTexture = ev_vulkan_registerCubeMap(format, imageAsset1.width, imageAsset1.height, 6, pixels);
 }
 
 RenderComponent ev_renderer_registerRenderComponent(const char *meshPath, const char *materialName)
@@ -1749,9 +1965,9 @@ void ev_material_readjsonlist(evjson_t *json_context, const char *list_name)
       materialPipelineHandle = ev_renderer_getPipeline(materialPipeline);
       evstring_free(materialPipeline);
     }
-    else {
-      materialPipelineHandle = ev_renderer_getPipeline(DEFAULTPIPELINE);
-    }
+    // else {
+    //   materialPipelineHandle = ev_renderer_getPipeline(DEFAULTPIPELINE);
+    // }
     evstring_free(materialPipeline_jsonid);
 
     ev_renderer_registerMaterial(materialname, newMaterial, materialPipelineHandle);
@@ -1785,8 +2001,9 @@ ShaderAssetStage jsonshadertype_to_assetstage(evstr_ref type) {
 
 void ev_graphicspipeline_readjsonlist(evjson_t *json_context, const char *list_name)
 {
-  ev_renderer_registerLightPipeline();
+  ev_renderer_registershadowmapPipeline();
   ev_renderer_registerskyboxPipeline();
+  ev_renderer_registerLightPipeline();
   ev_renderer_registerfxaaPipeline();
 
   vec(AssetHandle) loadedAssets = vec_init(AssetHandle);
@@ -1795,6 +2012,7 @@ void ev_graphicspipeline_readjsonlist(evjson_t *json_context, const char *list_n
   for(U32 i = 0; i < pipelineCount; i++) {
     evstring pipelineName_jsonid = evstring_newfmt("%s[%d].id", list_name, i);
     evstring pipelineName = evstring_refclone(evjs_get(json_context, pipelineName_jsonid)->as_str);
+    ev_log_debug("creating pipeline\n\n\n\n %s", pipelineName_jsonid);
 
     evstring shaderStages_jsonid = evstring_newfmt("%s[%d].shaderStages", list_name, i);
     evstring shaderStagesCount_jsonid = evstring_newfmt("%s.len", shaderStages_jsonid);
@@ -1919,19 +2137,56 @@ EV_CONSTRUCTOR
   ev_renderer_registerTexture(DEFAULTEXTURE);
 
   ev_syncmanager_allocatesemaphores(SWAPCHAIN_MAX_IMAGES, &DATA(offscreenRendering));
+  ev_syncmanager_allocatesemaphores(SWAPCHAIN_MAX_IMAGES, &DATA(shadowmapRendering));
   ev_syncmanager_allocatesemaphores(SWAPCHAIN_MAX_IMAGES, &DATA(lightRendering));
   ev_syncmanager_allocatesemaphores(SWAPCHAIN_MAX_IMAGES, &DATA(skyboxRendering));
 
   for (size_t i = 0; i < SWAPCHAIN_MAX_IMAGES; i++) {
     ev_vulkan_allocateprimarycommandbuffer(GRAPHICS, &DATA(offscreencommandbuffer)[i]);
+    ev_vulkan_allocateprimarycommandbuffer(GRAPHICS, &DATA(shadowmapcommandbuffer)[i]);
     ev_vulkan_allocateprimarycommandbuffer(GRAPHICS, &DATA(lightcommandbuffer)[i]);
     ev_vulkan_allocateprimarycommandbuffer(GRAPHICS, &DATA(skyboxcommandbuffer)[i]);
   }
 }
 
+void ev_renderer_clear()
+{
+  Hashmap(evstring, MaterialHandle).clear(RendererData.materialLibrary.map);
+  vec_clear(RendererData.materialLibrary.store);
+  vec_clear(RendererData.materialLibrary.pipelineHandles);
+
+  Hashmap(evstring, MaterialHandle).clear(RendererData.pipelineLibrary.map);
+  vec_clear(RendererData.materialLibrary.store);
+}
+
 EV_DESTRUCTOR
 {
   ev_vulkan_wait();
+
+  ev_renderpass_destory(RendererData.skyboxPass);
+  ev_renderpass_destory(RendererData.lightPass);
+  ev_renderpass_destory(RendererData.shadowmapPass);
+  ev_renderpass_destory(RendererData.offscreenPass);
+
+  destroyPipeline(&DATA(fxaaPipeline));
+  for (size_t i = 0; i < vec_len(DATA(fxaaPipeline).pSets); i++) {
+    ev_vulkan_destroysetlayout(DATA(fxaaPipeline).pSets[i].layout);
+  }
+
+  destroyPipeline(&DATA(skyboxPipeline));
+  for (size_t i = 0; i < vec_len(DATA(skyboxPipeline).pSets); i++) {
+    ev_vulkan_destroysetlayout(DATA(skyboxPipeline).pSets[i].layout);
+  }
+
+  destroyPipeline(&DATA(lightPipeline));
+  for (size_t i = 0; i < vec_len(DATA(lightPipeline).pSets); i++) {
+    ev_vulkan_destroysetlayout(DATA(lightPipeline).pSets[i].layout);
+  }
+
+  destroyPipeline(&DATA(shadowmapPipeline));
+  for (size_t i = 0; i < vec_len(DATA(shadowmapPipeline).pSets); i++) {
+    ev_vulkan_destroysetlayout(DATA(shadowmapPipeline).pSets[i].layout);
+  }
 
   vec_fini(DATA(textureBuffers));
   vec_fini(DATA(customBuffers));
@@ -1943,8 +2198,9 @@ EV_DESTRUCTOR
   materialLibraryDestroy(DATA(materialLibrary));
   pipelineLibraryDestroy(DATA(pipelineLibrary));
 
+  ev_vulkan_destroytexture(&RendererData.skyboxTexture);
+
   ev_renderer_globalsetsdinit();
-  destroyPipeline(&DATA(lightPipeline));
 
   ev_syncmanager_deinit();
   ev_vulkan_deinit();
@@ -1959,6 +2215,7 @@ EV_BINDINGS
 {
   EV_NS_BIND_FN(Renderer, setWindow, setWindow);
   EV_NS_BIND_FN(Renderer, run, run);
+  EV_NS_BIND_FN(Renderer, clear, ev_renderer_clear);
   EV_NS_BIND_FN(Renderer, addFrameObjectData, ev_renderer_addFrameObjectData);
   EV_NS_BIND_FN(Renderer, registerComponent, ev_renderer_registerRenderComponent);
 
@@ -1994,8 +2251,8 @@ void pipelineLibraryInit(PipelineLibrary *library)
 
 void pipelineLibraryDestroy(PipelineLibrary library)
 {
-  Hashmap(evstring, PipelineHandle).free(library.map);
   vec_fini(library.store);
+  Hashmap(evstring, PipelineHandle).free(library.map);
 }
 
 void meshLibraryInit(MeshLibrary *library)

@@ -180,7 +180,6 @@ void ev_vulkan_createrenderpass();
 
 void ev_vulkan_createframebuffers();
 
-void ev_vulkan_destroyframebuffer();
 void ev_vulkan_destroyrenderpass();
 
 VkCommandBuffer ev_vulkan_startframeoffscreen(uint32_t frameNumber);
