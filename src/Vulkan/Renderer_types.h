@@ -145,4 +145,7 @@ typedef struct {
   float metallicFactor;
   float roughnessFactor;
   uint32_t metallicRoughnessTexture;
+
+  Vec4 emissiveFactor;
+  uint32_t emissiveTexture;
 } Material;

@@ -1740,6 +1740,30 @@ void ev_material_readjsonlist(evjson_t *json_context, const char *list_name)
     }
     evstring_free(metallicRoughnessTexture_jsonid);
 
+    evstring emissive_jsonid = evstring_newfmt("%s[%d].emissiveTexture", list_name, i);
+    evjson_entry *emissiveEntry = evjs_get(json_context, emissive_jsonid);
+    if (emissiveEntry) {
+      evstring emissive = evstring_refclone(emissiveEntry->as_str);
+      newMaterial.emissiveTexture = ev_renderer_registerTexture(emissive);
+      evstring_free(emissive);
+    }
+    else {
+      newMaterial.emissiveTexture = 0;
+    }
+    evstring_free(emissive_jsonid);
+
+    evstring emissiveFactor_jsonID = evstring_newfmt("%s[%d].emissiveFactor", list_name, i);
+    evjson_entry *emissiveFactorEntry = evjs_get(json_context, emissiveFactor_jsonID);
+    if(emissiveFactorEntry) {
+      evstring_pushstr(&emissiveFactor_jsonID, "[x]");
+      size_t emissiveFactor_jsonID_len = evstring_len(emissiveFactor_jsonID);
+      for(size_t i = 0; i < 3; i++) {
+        emissiveFactor_jsonID[emissiveFactor_jsonID_len-2] = '0' + i;
+        ((float*)&newMaterial.emissiveFactor)[i] = (float)evjs_get(json_context, emissiveFactor_jsonID)->as_num;
+      }
+    }
+    evstring_free(emissiveFactor_jsonID);
+
 // TODO fix this
     evstring materialPipeline_jsonid = evstring_newfmt("%s[%d].pipeline", list_name, i);
     PipelineHandle materialPipelineHandle;
