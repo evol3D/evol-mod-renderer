@@ -355,6 +355,11 @@ void setWindow(WindowHandle handle)
 
   ev_vulkan_createrenderpass();
   ev_vulkan_createframebuffers();
+
+  ev_renderer_registershadowmapPipeline();
+  ev_renderer_registerskyboxPipeline();
+  ev_renderer_registerLightPipeline();
+  ev_renderer_registerfxaaPipeline();
 }
 
 void ev_renderer_createoffscreenpass(VkExtent3D passExtent)
@@ -2025,11 +2030,6 @@ ShaderAssetStage jsonshadertype_to_assetstage(evstr_ref type) {
 
 void ev_graphicspipeline_readjsonlist(evjson_t *json_context, const char *list_name)
 {
-  ev_renderer_registershadowmapPipeline();
-  ev_renderer_registerskyboxPipeline();
-  ev_renderer_registerLightPipeline();
-  ev_renderer_registerfxaaPipeline();
-
   vec(AssetHandle) loadedAssets = vec_init(AssetHandle);
   evstring pipelineCount_jsonid = evstring_newfmt("%s.len", list_name);
   U32 pipelineCount = (U32)evjs_get(json_context, pipelineCount_jsonid)->as_num;
@@ -2179,13 +2179,8 @@ void ev_renderer_clear()
   vec_clear(RendererData.materialLibrary.store);
   vec_clear(RendererData.materialLibrary.pipelineHandles);
 
-  Hashmap(evstring, MaterialHandle).clear(RendererData.pipelineLibrary.map);
-  vec_clear(RendererData.materialLibrary.store);
-}
-
-EV_DESTRUCTOR
-{
-  ev_vulkan_wait();
+  Hashmap(evstring, PipelineHandle).clear(RendererData.pipelineLibrary.map);
+  vec_clear(RendererData.pipelineLibrary.store);
 
   ev_renderpass_destory(RendererData.skyboxPass);
   ev_renderpass_destory(RendererData.lightPass);
@@ -2211,6 +2206,13 @@ EV_DESTRUCTOR
   for (size_t i = 0; i < vec_len(DATA(shadowmapPipeline).pSets); i++) {
     ev_vulkan_destroysetlayout(DATA(shadowmapPipeline).pSets[i].layout);
   }
+}
+
+EV_DESTRUCTOR
+{
+  ev_vulkan_wait();
+
+  ev_renderer_clear();
 
   vec_fini(DATA(textureBuffers));
   vec_fini(DATA(customBuffers));
@@ -2239,7 +2241,6 @@ EV_BINDINGS
 {
   EV_NS_BIND_FN(Renderer, setWindow, setWindow);
   EV_NS_BIND_FN(Renderer, run, run);
-  EV_NS_BIND_FN(Renderer, clear, ev_renderer_clear);
   EV_NS_BIND_FN(Renderer, addFrameObjectData, ev_renderer_addFrameObjectData);
   EV_NS_BIND_FN(Renderer, registerComponent, ev_renderer_registerRenderComponent);
 

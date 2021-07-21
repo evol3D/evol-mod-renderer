@@ -1,7 +1,6 @@
 EV_NS_DEF_BEGIN(Renderer)
 EV_NS_DEF_FN(void, setWindow, (GenericHandle, handle))
 EV_NS_DEF_FN(void, run, (,))
-EV_NS_DEF_FN(void, clear, (,))
 EV_NS_DEF_FN(void, addFrameObjectData, (RenderComponent*, components), (Matrix4x4* ,transforms), (uint32_t, count))
 EV_NS_DEF_FN(RenderComponent, registerComponent, (CONST_STR, meshPath), (CONST_STR, materialName))
 EV_NS_DEF_END(Renderer)
