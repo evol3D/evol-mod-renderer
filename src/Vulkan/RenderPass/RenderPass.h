@@ -25,6 +25,8 @@ typedef struct {
   VkExtent3D extent;
   VkImageUsageFlags usageFlags;
   VkImageAspectFlags aspectFlags;
+
+  VkImageLayout imageIntialLayout;
 } PassAttachment;
 
 typedef struct {

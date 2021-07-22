@@ -492,7 +492,7 @@ void ev_vulkan_destroyimageview(VkImageView imageView)
   vkDestroyImageView(DATA(logicalDevice), imageView, NULL);
 }
 
-void ev_vulkan_writeintobinding(uint32_t setIndex, DescriptorSet set, Binding *binding, uint32_t arrayElement, void *data)
+void ev_vulkan_writeintobinding(uint32_t setIndex, VkImageLayout layout, DescriptorSet set, Binding *binding, uint32_t arrayElement, void *data)
 {
   VkWriteDescriptorSet setWrite;
   VkDescriptorBufferInfo bufferInfo = {0};
@@ -527,7 +527,7 @@ void ev_vulkan_writeintobinding(uint32_t setIndex, DescriptorSet set, Binding *b
     case VK_DESCRIPTOR_TYPE_SAMPLER:
     case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
       {
-        imageinfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        imageinfo.imageLayout = layout,
         imageinfo.imageView   = ((EvTexture*)data)->imageView,
         imageinfo.sampler     = ((EvTexture*)data)->sampler,
 

@@ -217,7 +217,7 @@ void ev_renderer_globalsetsinit()
 
     //sceneBuffer
     ev_vulkan_allocateubo(sizeof(EvScene), false, &RendererData.scenesBuffer);
-    ev_vulkan_writeintobinding(0, DATA(sceneSet), &DATA(sceneSet).pBindings[0], 0, &(DATA(scenesBuffer).buffer));
+    ev_vulkan_writeintobinding(0, 0, DATA(sceneSet), &DATA(sceneSet).pBindings[0], 0, &(DATA(scenesBuffer).buffer));
   }
 
   //CameraSet
@@ -246,7 +246,7 @@ void ev_renderer_globalsetsinit()
     ev_descriptormanager_allocate(DATA(cameraSet).layout, &DATA(cameraSet).set[0]);
 
     ev_vulkan_allocateubo(sizeof(CameraData), false, &RendererData.cameraBuffer);
-    ev_vulkan_writeintobinding(0, DATA(cameraSet), &DATA(cameraSet).pBindings[0], 0, &(DATA(cameraBuffer).buffer));
+    ev_vulkan_writeintobinding(0, 0, DATA(cameraSet), &DATA(cameraSet).pBindings[0], 0, &(DATA(cameraBuffer).buffer));
   }
 
   //Resources set
@@ -517,7 +517,7 @@ void ev_renderer_createshadowmappass(VkExtent3D passExtent)
       .type = EV_RENDERPASSATTACHMENT_TYPE_DEPTH,
       .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
       .useLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-      .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
 
       .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
       .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -526,11 +526,36 @@ void ev_renderer_createshadowmappass(VkExtent3D passExtent)
 
       .extent = passExtent,
       .usageFlags = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-      .aspectFlags = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+      .aspectFlags = VK_IMAGE_ASPECT_DEPTH_BIT,
     },
   };
 
   ev_renderpass_build(SWAPCHAIN_MAX_IMAGES, passExtent, ARRAYSIZE(attachmentDescriptions), attachmentDescriptions, 1, 0, NULL, &RendererData.shadowmapPass);
+
+  for (size_t i = 0; i < SWAPCHAIN_MAX_IMAGES; i++)
+  {
+    vkDestroySampler(ev_vulkan_getlogicaldevice(), RendererData.shadowmapPass.framebuffers[i].frameAttachments[0].sampler, NULL);
+
+    VkSamplerCreateInfo samplerCreateInfo = {
+      .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+      .magFilter = VK_FILTER_LINEAR,
+      .minFilter = VK_FILTER_LINEAR,
+      .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+      .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+      .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+      .anisotropyEnable = VK_FALSE,
+      .maxAnisotropy = 1.0f,
+      .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+      .unnormalizedCoordinates = VK_FALSE,
+      .compareEnable = VK_TRUE,
+      .compareOp = VK_COMPARE_OP_ALWAYS,
+      .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+      .mipLodBias = 0.0f,
+      .minLod = 0.0f,
+      .maxLod = 0.0f,
+    };
+    vkCreateSampler(ev_vulkan_getlogicaldevice(), &samplerCreateInfo, NULL, &RendererData.shadowmapPass.framebuffers[i].frameAttachments[0].sampler);
+  }
 }
 
 void ev_renderer_createlightpass(VkExtent3D passExtent)
@@ -610,7 +635,7 @@ void ev_renderer_createskyboxtpass(VkExtent3D passExtent)
       .type = EV_RENDERPASSATTACHMENT_TYPE_DEPTH,
       .initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
       .useLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-      .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+      .finalLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL,
 
       .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
       .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -728,7 +753,7 @@ void ev_renderer_registershadowmapPipeline()
     }
   }
 
-  ev_vulkan_writeintobinding(0, DATA(shadowmapPipeline.pSets[1]), &DATA(shadowmapPipeline.pSets[1]).pBindings[0], 0, &(DATA(lightsBuffer).buffer));
+  ev_vulkan_writeintobinding(0, 0, DATA(shadowmapPipeline.pSets[1]), &DATA(shadowmapPipeline.pSets[1]).pBindings[0], 0, &(DATA(lightsBuffer).buffer));
 }
 
 void ev_renderer_registerLightPipeline()
@@ -802,8 +827,8 @@ void ev_renderer_registerLightPipeline()
     }
   }
 
-  ev_vulkan_writeintobinding(0, DATA(lightPipeline.pSets[1]), &DATA(lightPipeline.pSets[1]).pBindings[0], 0, &(DATA(cameraBuffer).buffer));
-  ev_vulkan_writeintobinding(0, DATA(lightPipeline.pSets[1]), &DATA(lightPipeline.pSets[1]).pBindings[1], 0, &(DATA(lightsBuffer).buffer));
+  ev_vulkan_writeintobinding(0, 0, DATA(lightPipeline.pSets[1]), &DATA(lightPipeline.pSets[1]).pBindings[0], 0, &(DATA(cameraBuffer).buffer));
+  ev_vulkan_writeintobinding(0, 0, DATA(lightPipeline.pSets[1]), &DATA(lightPipeline.pSets[1]).pBindings[1], 0, &(DATA(lightsBuffer).buffer));
 }
 
 void ev_renderer_registerskyboxPipeline()
@@ -897,10 +922,10 @@ void ev_renderer_registerskyboxPipeline()
 
   ev_renderer_registerCubeMap("assets://textures/");
 
-  ev_vulkan_writeintobinding(0, DATA(skyboxPipeline.pSets[0]), &DATA(skyboxPipeline.pSets[0]).pBindings[0], 0, &RendererData.skyboxTexture);
-  ev_vulkan_writeintobinding(0, DATA(skyboxPipeline.pSets[1]), &DATA(skyboxPipeline.pSets[1]).pBindings[0], 0, &(DATA(cameraBuffer).buffer));
+  ev_vulkan_writeintobinding(0, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, DATA(skyboxPipeline.pSets[0]), &DATA(skyboxPipeline.pSets[0]).pBindings[0], 0, &RendererData.skyboxTexture);
+  ev_vulkan_writeintobinding(0, 0, DATA(skyboxPipeline.pSets[1]), &DATA(skyboxPipeline.pSets[1]).pBindings[0], 0, &(DATA(cameraBuffer).buffer));
 
-  ev_vulkan_writeintobinding(0, DATA(sceneSet), &DATA(sceneSet).pBindings[2], 0, &RendererData.skyboxTexture);
+  ev_vulkan_writeintobinding(0, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, DATA(sceneSet), &DATA(sceneSet).pBindings[2], 0, &RendererData.skyboxTexture);
 }
 
 void ev_renderer_registerfxaaPipeline()
@@ -997,7 +1022,7 @@ void run()
     ev_vulkan_wait();
     size_t materialBufferLength = MAX(vec_len(RendererData.materialLibrary.store), vec_capacity(RendererData.materialLibrary.store));
     RendererData.materialsBuffer = ev_vulkan_registerbuffer(RendererData.materialLibrary.store, sizeof(Material) * materialBufferLength);
-    ev_vulkan_writeintobinding(0, DATA(resourcesSet), &DATA(resourcesSet).pBindings[3], 0, &RendererData.materialsBuffer);
+    ev_vulkan_writeintobinding(0, 0, DATA(resourcesSet), &DATA(resourcesSet).pBindings[3], 0, &RendererData.materialsBuffer);
 
     DATA(materialLibrary).dirty = false;
   }
@@ -1006,11 +1031,11 @@ void run()
   {
     ev_vulkan_wait();
     for (size_t i = 0; i < vec_len(RendererData.indexBuffers); i++) {
-      ev_vulkan_writeintobinding(0, DATA(resourcesSet), &DATA(resourcesSet).pBindings[2], i, &(DATA(indexBuffers)[i].buffer));
+      ev_vulkan_writeintobinding(0, 0, DATA(resourcesSet), &DATA(resourcesSet).pBindings[2], i, &(DATA(indexBuffers)[i].buffer));
     }
 
     for (size_t i = 0; i < vec_len(RendererData.vertexBuffers); i++) {
-      ev_vulkan_writeintobinding(0, DATA(resourcesSet), &DATA(resourcesSet).pBindings[1], i, &(DATA(vertexBuffers)[i].buffer));
+      ev_vulkan_writeintobinding(0, 0, DATA(resourcesSet), &DATA(resourcesSet).pBindings[1], i, &(DATA(vertexBuffers)[i].buffer));
     }
 
     DATA(meshLibrary).dirty = false;
@@ -1020,7 +1045,7 @@ void run()
   {
     ev_vulkan_wait();
     for (size_t i = 0; i < vec_len(RendererData.textureBuffers); i++) {
-      ev_vulkan_writeintobinding(0, DATA(resourcesSet), &DATA(resourcesSet).pBindings[4], i, &(DATA(textureBuffers)[i]));
+      ev_vulkan_writeintobinding(0, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, DATA(resourcesSet), &DATA(resourcesSet).pBindings[4], i, &(DATA(textureBuffers)[i]));
     }
 
     DATA(textureLibrary).dirty = false;
@@ -1048,17 +1073,19 @@ void run()
   VK_ASSERT(vkResetFences(ev_vulkan_getlogicaldevice(), 1, &swapchain->renderFences[frameNumber]));
 
   vkAcquireNextImageKHR(ev_vulkan_getlogicaldevice(), swapchain->swapchain, ~0ull, swapchain->presentSemaphores[frameNumber], NULL, &swapchainImageIndex);
-  ev_log_debug("swapchainImageIndex: %d", swapchainImageIndex);
-  ev_log_debug("frameNumber : %d\n\n", frameNumber);
 
   Framebuffer framebuffer = RendererData.offscreenPass.framebuffers[swapchainImageIndex];
-  ev_vulkan_writeintobinding(swapchainImageIndex, DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[0], 0, &framebuffer.frameAttachments[0]);
-  ev_vulkan_writeintobinding(swapchainImageIndex, DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[1], 0, &framebuffer.frameAttachments[1]);
-  ev_vulkan_writeintobinding(swapchainImageIndex, DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[2], 0, &framebuffer.frameAttachments[2]);
-  ev_vulkan_writeintobinding(swapchainImageIndex, DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[3], 0, &framebuffer.frameAttachments[3]);
+  ev_vulkan_writeintobinding(swapchainImageIndex, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[0], 0, &framebuffer.frameAttachments[0]);
+  ev_vulkan_writeintobinding(swapchainImageIndex, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[1], 0, &framebuffer.frameAttachments[1]);
+  ev_vulkan_writeintobinding(swapchainImageIndex, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[2], 0, &framebuffer.frameAttachments[2]);
+  ev_vulkan_writeintobinding(swapchainImageIndex, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[3], 0, &framebuffer.frameAttachments[3]);
+
+  framebuffer = RendererData.shadowmapPass.framebuffers[swapchainImageIndex];
+  ev_vulkan_writeintobinding(swapchainImageIndex, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, DATA(lightPipeline.pSets[0]), &DATA(lightPipeline.pSets[0]).pBindings[4], 0, &framebuffer.frameAttachments[0]);
 
   framebuffer = RendererData.lightPass.framebuffers[swapchainImageIndex];
-  ev_vulkan_writeintobinding(swapchainImageIndex, DATA(fxaaPipeline.pSets[0]), &DATA(fxaaPipeline.pSets[0]).pBindings[0], 0, &framebuffer.frameAttachments[0]);
+  ev_vulkan_writeintobinding(swapchainImageIndex, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, DATA(fxaaPipeline.pSets[0]), &DATA(fxaaPipeline.pSets[0]).pBindings[0], 0, &framebuffer.frameAttachments[0]);
+
   /////////////////////////////
   //First pass
   {
@@ -1187,7 +1214,7 @@ void run()
     VK_ASSERT(vkQueueSubmit(VulkanQueueManager.getQueue(GRAPHICS), 1, &submit, VK_NULL_HANDLE));
   }
   // end First pass
-  //////////////////
+  /////////////////////////////
 
   /////////////////////////////
   //Second pass
@@ -1240,6 +1267,8 @@ void run()
       vkCmdSetScissor(cmd, 0, 1, &scissor);
       vkCmdSetViewport(cmd, 0, 1, &viewport);
     }
+
+    ev_vulkan_updateubo(sizeof(LightObject) * vec_len(DATA(currentFrame).lightObjects), RendererData.currentFrame.lightObjects, &(DATA(lightsBuffer).buffer));
 
     VkPipeline oldPipeline;
     for (size_t componentIndex = 0; componentIndex < vec_len(DATA(currentFrame).objectComponents); componentIndex++)
@@ -1348,7 +1377,6 @@ void run()
       vkCmdSetViewport(cmd, 0, 1, &viewport);
     }
 
-    ev_vulkan_updateubo(sizeof(LightObject) * vec_len(DATA(currentFrame).lightObjects), RendererData.currentFrame.lightObjects, &(DATA(lightsBuffer).buffer));
     LightPushConstants lightPushConstants;
     lightPushConstants.lightCount = vec_len(DATA(currentFrame).lightObjects);
     vkCmdPushConstants(cmd, RendererData.lightPipeline.pipelineLayout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, sizeof(LightPushConstants), &lightPushConstants);
@@ -1366,11 +1394,18 @@ void run()
       .pNext = NULL,
     };
 
-    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    VkPipelineStageFlags waitStages[] = {
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    };
+    VkSemaphore waitSemaphores[] = {
+      DATA(offscreenRendering)[frameNumber],
+      DATA(shadowmapRendering)[frameNumber],
+    };
 
-    submit.waitSemaphoreCount = 1;
-    submit.pWaitDstStageMask = &waitStage;
-    submit.pWaitSemaphores = &DATA(offscreenRendering)[frameNumber],
+    submit.waitSemaphoreCount = ARRAYSIZE(waitStages);
+    submit.pWaitDstStageMask = waitStages;
+    submit.pWaitSemaphores = waitSemaphores;
 
     submit.signalSemaphoreCount = 1;
     submit.pSignalSemaphores = &DATA(lightRendering)[frameNumber];
@@ -2036,8 +2071,6 @@ void ev_graphicspipeline_readjsonlist(evjson_t *json_context, const char *list_n
   for(U32 i = 0; i < pipelineCount; i++) {
     evstring pipelineName_jsonid = evstring_newfmt("%s[%d].id", list_name, i);
     evstring pipelineName = evstring_refclone(evjs_get(json_context, pipelineName_jsonid)->as_str);
-    ev_log_debug("creating pipeline\n\n\n\n %s", pipelineName_jsonid);
-
     evstring shaderStages_jsonid = evstring_newfmt("%s[%d].shaderStages", list_name, i);
     evstring shaderStagesCount_jsonid = evstring_newfmt("%s.len", shaderStages_jsonid);
     U32 shaderStagesCount = (U32)evjs_get(json_context, shaderStagesCount_jsonid)->as_num;

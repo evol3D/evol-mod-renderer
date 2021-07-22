@@ -111,8 +111,6 @@ typedef struct {
   uint32_t binding;
   VkDescriptorType type;
   const uint32_t *bindingName;
-
-  uint32_t writtenSetsCount;
 } Binding;
 
 typedef struct {
