@@ -705,7 +705,7 @@ void ev_renderer_registershadowmapPipeline()
     .depthClampEnable = VK_FALSE,
     .rasterizerDiscardEnable = VK_FALSE,
     .polygonMode = VK_POLYGON_MODE_FILL,
-    .cullMode = VK_CULL_MODE_BACK_BIT,
+    .cullMode = VK_CULL_MODE_FRONT_BIT,
     .lineWidth = 1.0,
   };
 
@@ -1091,6 +1091,7 @@ void run()
   framebuffer = RendererData.lightPass.framebuffers[swapchainImageIndex];
   ev_vulkan_writeintobinding(swapchainImageIndex, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, DATA(fxaaPipeline.pSets[0]), &DATA(fxaaPipeline.pSets[0]).pBindings[0], 0, &framebuffer.frameAttachments[0]);
 
+  ev_vulkan_updateubo(sizeof(LightObject) * vec_len(DATA(currentFrame).lightObjects), RendererData.currentFrame.lightObjects, &(DATA(lightsBuffer).buffer));
   /////////////////////////////
   //First pass
   {
@@ -1273,8 +1274,6 @@ void run()
       vkCmdSetViewport(cmd, 0, 1, &viewport);
     }
 
-    ev_vulkan_updateubo(sizeof(LightObject) * vec_len(DATA(currentFrame).lightObjects), RendererData.currentFrame.lightObjects, &(DATA(lightsBuffer).buffer));
-
     VkPipeline oldPipeline;
     for (size_t componentIndex = 0; componentIndex < vec_len(DATA(currentFrame).objectComponents); componentIndex++)
     {
@@ -1384,9 +1383,13 @@ void run()
 
     LightPushConstants lightPushConstants;
     lightPushConstants.lightCount = vec_len(DATA(currentFrame).lightObjects);
-    vkCmdPushConstants(cmd, RendererData.lightPipeline.pipelineLayout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, sizeof(LightPushConstants), &lightPushConstants);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererData.lightPipeline.pipeline);
+    vkCmdPushConstants(cmd, RendererData.lightPipeline.pipelineLayout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, sizeof(LightPushConstants), &lightPushConstants);
     VkDescriptorSet ds[4];
+    for (size_t i = 0; i < vec_len(RendererData.lightPipeline.pSets); i++)
+    {
+      ds[i] = RendererData.lightPipeline.pSets[i].set[0];
+    }
     ds[0] = RendererData.lightPipeline.pSets[0].set[swapchainImageIndex];
     ds[1] = RendererData.lightPipeline.pSets[1].set[0];
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererData.lightPipeline.pipelineLayout, 0, vec_len(RendererData.lightPipeline.pSets), ds, 0, 0);
